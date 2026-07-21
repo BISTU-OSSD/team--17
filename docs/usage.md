@@ -8,8 +8,10 @@
 
 确保已安装Python 3.8+和必要的依赖：
 
+## 安装
+
 ```bash
-pip install requests
+pip install -r requirements.txt
 ```
 
 ## 使用方法

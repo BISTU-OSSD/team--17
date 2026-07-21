@@ -33,7 +33,7 @@ README内容:
 }
 """
     
-    with patch('src.analyzer.chat', return_value=mock_llm_response):
+    with patch("src.analyzer.stream_chat", return_value=mock_llm_response):
         result = analyze_github_project(valid_input)
     
     # 验证返回结构
