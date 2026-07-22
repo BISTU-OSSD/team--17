@@ -19,7 +19,7 @@ DevSkillMapper
 ├── llama_chat.py        # LLM 接口
 ├── llama_stream.py      # 流式输出
 │
-├── requirements.txt     # Python 依赖
+├── requirements_main.txt # Python 依赖
 ├── .env.example         # 环境变量模板
 └── .gitignore
 ```
@@ -33,7 +33,7 @@ DevSkillMapper
 安装 Python 依赖：
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements_main.txt
 ```
 
 ### 第二步

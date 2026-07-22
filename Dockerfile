@@ -10,9 +10,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app
 
 # 4. 安装依赖
-COPY requirements.txt .
+COPY requirements_main.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements_main.txt
 
 # 5. 复制项目代码
 COPY . .

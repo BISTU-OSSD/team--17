@@ -26,7 +26,7 @@ cd team--17
 ## 3. 安装 Python 依赖
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements_main.txt
 ```
 
 ---
