@@ -60,13 +60,13 @@ def main():
                     sys.exit(1)
     else:
         print("用法:")
-        print("  python run.py                                    # 交互对话模式")
-        print("  python run.py <输入文件> <输出文件>               # 单文件分析")
-        print("  python run.py <输入目录> <输出目录>               # 批量分析")
+        print("  python run_llm.py                                    # 交互对话模式")
+        print("  python run_llm.py <输入文件> <输出文件>               # 单文件分析")
+        print("  python run_llm.py <输入目录> <输出目录>               # 批量分析")
         print("")
         print("示例:")
-        print("  python run.py examples\\sample_input.txt result.json")
-        print("  python run.py projects/ results/")
+        print("  python run_llm.py examples\\sample_input.txt result.json")
+        print("  python run_llm.py projects/ results/")
         sys.exit(1)
 
     # 启动服务器
