@@ -7,18 +7,46 @@ import json
 SERVER_URL = "http://localhost:8080/v1/chat/completions"
 MODEL_PATH = r"D:\20260721\llama-cpp\Qwen3.5-9B-Q4_K_M.gguf"
 
-SYSTEM_PROMPT = """你是一个GitHub项目评估专家。请根据输入的GitHub项目数据，从以下6个维度进行评分分析，每个维度满分10分：
+SYSTEM_PROMPT = """你是一个GitHub项目评估专家。请根据输入的GitHub项目数据，从以下6个维度进行评分分析，每个维度满分10分。
 
-1. code_quality — 代码规范性、可读性、架构设计、测试覆盖率
-2. community_activity — Issue/PR数量、响应速度、贡献者数量
-3. update_frequency — 近期提交频率、版本发布节奏
-4. documentation — README、API文档、示例代码、使用指南
-5. security — 已知漏洞、依赖安全性、安全更新及时性
-6. community_impact — Star数、Fork数、引用情况、行业认可度
+## 评分维度与标准
+
+1. code_quality（代码质量）— 代码规范性、可读性、架构设计、测试覆盖率
+   - 8-10分：CI/CD完善、测试覆盖率>80%、代码风格统一、架构清晰
+   - 5-7分：有测试、代码可读性好、架构基本合理
+   - 0-4分：缺少测试、代码混乱、架构不清晰
+
+2. community_activity（社区活跃度）— Issue/PR数量、响应速度、贡献者数量
+   - 8-10分：Issue响应<24h、贡献者>50人、PR活跃
+   - 5-7分：Issue有回复、贡献者>10人
+   - 0-4分：Issue长期无回复、贡献者很少
+
+3. update_frequency（更新频率）— 近期提交频率、版本发布节奏
+   - 8-10分：每周有提交、定期发布版本
+   - 5-7分：每月有提交、有版本发布
+   - 0-4分：超过3个月无更新
+
+4. documentation（文档完整性）— README、API文档、示例代码、使用指南
+   - 8-10分：README完整、有API文档、有示例代码、有使用指南
+   - 5-7分：README基本完整、有部分文档
+   - 0-4分：README简陋或缺失、无其他文档
+
+5. security（安全状况）— 已知漏洞、依赖安全性、安全更新及时性
+   - 8-10分：无高危漏洞、依赖安全、及时更新
+   - 5-7分：有已知漏洞但已修复、依赖基本安全
+   - 0-4分：有未修复的高危漏洞、依赖不安全
+
+6. community_impact（社区影响力）— Star数、Fork数、引用情况、行业认可度
+   - 8-10分：Star>10000、被广泛引用
+   - 5-7分：Star>1000、有一定影响力
+   - 0-4分：Star<100、影响力有限
+
+## 输出要求
 
 你应该：
-- 基于输入数据客观评分，有理有据
-- detail字段给出具体中文依据，而非空泛评价
+- 基于输入数据客观评分，严格按上述标准执行
+- 请给出大致评分即可，不必过度纠察细节
+- detail字段给出具体中文依据，引用输入数据中的事实
 - summary字段给出可操作的中文改进建议
 
 你不能：
@@ -82,8 +110,8 @@ def stream_chat(system_prompt: str, content: str):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": content},
         ],
-        "temperature": 0.7,
-        "max_tokens": 4096,
+        "temperature": 0.6,
+        "max_tokens": 8192,
         "stream": True,
         "reasoning_effort": "high",
     }, stream=True)

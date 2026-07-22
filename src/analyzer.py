@@ -52,11 +52,20 @@ def analyze_github_project(text_content: str) -> Dict[str, Any]:
         try:
             analysis_result = json.loads(cleaned_result)
         except json.JSONDecodeError:
+            # 返回完整的失败结构，保证链路完整
+            repo_url = ""
+            for line in text_content.split("\n"):
+                if "GitHub地址:" in line:
+                    repo_url = line.split("GitHub地址:")[1].strip()
+                    break
             return {
-                "status": "error",
-                "error_type": "JSON_PARSE_ERROR",
-                "message": "LLM返回的不是有效JSON",
-                "raw_response": raw_result
+                "status": "failed",
+                "analysis_id": str(uuid.uuid4()),
+                "repo_url": repo_url,
+                "scores": {},
+                "total_score": 0.0,
+                "summary": "分析失败：模型未返回有效JSON",
+                "timestamp": datetime.now().isoformat()
             }
         
         # 提取项目名称（从输入文本中）

@@ -37,6 +37,10 @@ def main():
         write_output_file(result, args.output_file)
         sys.exit(1)
     
+    # 处理失败但结构完整的响应
+    if result.get("status") == "failed":
+        print(f"警告: {result.get('summary', '分析失败')}")
+    
     # 验证输出格式
     if not validate_analysis_result(result):
         print("警告: 输出格式不符合标准，但仍然保存")
