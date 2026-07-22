@@ -20,20 +20,20 @@ README内容:
     # 模拟LLM返回的JSON结果
     mock_llm_response = """
 {
-    "项目名称": "test-project",
-    "评分": {
-        "代码质量": {"分数": 8.5, "说明": "Good code quality"},
-        "社区活跃度": {"分数": 7.0, "说明": "Active community"},
-        "更新频率": {"分数": 9.0, "说明": "Regular updates"},
-        "文档完整性": {"分数": 6.5, "说明": "Adequate docs"},
-        "安全状况": {"分数": 8.0, "说明": "Secure"},
-        "社区影响力": {"分数": 9.5, "说明": "High impact"}
+    "project_name": "test-project",
+    "scores": {
+        "code_quality": {"score": 8.5, "detail": "Good code quality"},
+        "community_activity": {"score": 7.0, "detail": "Active community"},
+        "update_frequency": {"score": 9.0, "detail": "Regular updates"},
+        "documentation": {"score": 6.5, "detail": "Adequate docs"},
+        "security": {"score": 8.0, "detail": "Secure"},
+        "community_impact": {"score": 9.5, "detail": "High impact"}
     },
-    "总结建议": "Overall good project"
+    "summary": "Overall good project"
 }
 """
     
-    with patch('src.analyzer.chat', return_value=mock_llm_response):
+    with patch('src.analyzer.stream_chat', return_value=mock_llm_response):
         result = analyze_github_project(valid_input)
     
     # 验证返回结构
