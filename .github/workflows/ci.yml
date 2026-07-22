@@ -21,7 +21,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip" # 开启 pip 缓存，提升后续 CI 运行速度
+          cache: "pip"
+          cache-dependency-path: requirements_main.txt
 
       - name: Install dependencies
         run: |
