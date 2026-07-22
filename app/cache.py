@@ -63,7 +63,15 @@ class CacheManager:
 
     @staticmethod
     def make_key(full_name: str, endpoint: str) -> str:
-        """统一构造缓存键：owner/repo + API 端点"""
+        """统一构造缓存键。
+        full_name 支持两种格式：
+          - owner/repo    → "facebook/react:full_report"
+          - API 路径 (/开头) → "/repos/facebook/react/languages:json"
+        """
+        if full_name.startswith("/"):
+            # API 路径，直接拼接，不拆分
+            return f"{full_name}:{endpoint}"
+        # owner/repo 格式
         owner, repo = full_name.split("/", 1)
         return f"{owner}/{repo}:{endpoint}"
 

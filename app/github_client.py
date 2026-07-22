@@ -228,12 +228,21 @@ class GitHubClient:
         return await self._request("GET", path, params=params, use_etag=use_etag)
 
     async def _get_json(self, path: str, params: dict | None = None) -> Any:
-        """GET 并自动解析 JSON，支持缓存"""
+        """GET 并自动解析 JSON，支持缓存 + ETag 条件请求"""
         cache_key = cache.make_key(path, "json")
         cached = await cache.get(cache_key)
         if cached is not None:
             return cached
-        resp = await self._get(path, params=params)
+
+        resp = await self._get(path, params=params, use_etag=True)
+        if resp.status_code == 304:
+            # ETag 命中，数据未变更 → 从本地缓存恢复
+            cached = await cache.get(cache_key)
+            if cached is not None:
+                return cached
+            # 缓存也丢失了（极端情况）→ 不带 ETag 强制重新获取
+            resp = await self._get(path, params=params)
+
         data = resp.json()
         await cache.set(cache_key, data)
         return data
