@@ -178,40 +178,6 @@ def stream_chat(system_prompt: str, content: str) -> str:
     return "".join(answer_parts)
 
 
-def stream_chat_chunks(system_prompt: str, content: str):
-    """流式生成器，yield {"type": "thinking"|"content", "text": ...}"""
-    resp = requests.post(SERVER_URL, json={
-        "model": MODEL_PATH,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": content},
-        ],
-        "temperature": 0.6,
-        "max_tokens": 8192,
-        "stream": True,
-        "reasoning_effort": "high",
-    }, stream=True, timeout=300)
-    resp.raise_for_status()
-
-    for line in resp.iter_lines():
-        if not line:
-            continue
-        line = line.decode("utf-8")
-        if not line.startswith("data: "):
-            continue
-        data = line[6:]
-        if data == "[DONE]":
-            break
-        chunk = json.loads(data)
-        delta = chunk["choices"][0]["delta"]
-
-        if "reasoning_content" in delta and delta["reasoning_content"]:
-            yield {"type": "thinking", "text": delta["reasoning_content"]}
-
-        if "content" in delta and delta["content"]:
-            yield {"type": "content", "text": delta["content"]}
-
-
 def load_repo_content(file_path: str = None) -> str:
     """加载仓库内容，如果指定文件则读取文件，否则使用模拟数据"""
     if file_path:

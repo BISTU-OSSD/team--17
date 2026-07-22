@@ -25,7 +25,6 @@ from pydantic import BaseModel, Field
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.json_to_text import convert_json_to_text
 from src.analyzer import analyze_github_project
-from llama_chat import stream_chat_chunks, SYSTEM_PROMPT as LLM_SYSTEM_PROMPT
 
 from .cache import cache
 from .github_client import (
@@ -200,14 +199,11 @@ async def analyze_repo(owner: str, repo: str):
     流式分析 GitHub 仓库（SSE）。
 
     事件类型：
-      step     — 处理步骤进度
-      thinking — LLM 思考过程
-      content  — LLM 正式回复
-      result   — 最终完整结果
-      error    — 错误
+      step   — 处理步骤进度
+      result — 最终完整结果
+      error  — 错误
     """
     import re, json as _json
-    from datetime import datetime
 
     if not re.match(r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$", f"{owner}/{repo}"):
         raise HTTPException(status_code=400, detail="仓库路径格式无效")
@@ -216,7 +212,7 @@ async def analyze_repo(owner: str, repo: str):
     client = _get_client()
 
     def sse(event: str, data) -> str:
-        return f"event: {event}\ndata: {_json.dumps(data, ensure_ascii=False)}\n\n"
+        return f"event: {event}\ndata: {_json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
     async def generate():
         # Step 1: 校验
@@ -244,31 +240,10 @@ async def analyze_repo(owner: str, repo: str):
         text_content = convert_json_to_text(report_dict)
         yield sse("step", {"step": "converted", "message": "文本转换完成"})
 
-        # Step 4: LLM 分析（流式）
+        # Step 4: LLM 分析
         yield sse("step", {"step": "analyzing", "message": "AI 正在分析，请稍候..."})
         loop = asyncio.get_running_loop()
-
-        thinking_text = ""
-        content_text = ""
-
-        def run_stream():
-            nonlocal thinking_text, content_text
-            for chunk in stream_chat_chunks(LLM_SYSTEM_PROMPT, text_content):
-                if chunk["type"] == "thinking":
-                    thinking_text += chunk["text"]
-                elif chunk["type"] == "content":
-                    content_text += chunk["text"]
-
-        await loop.run_in_executor(None, run_stream)
-
-        # 用完整文本做一次非流式调用拿结构化结果
         analysis = await loop.run_in_executor(None, analyze_github_project, text_content)
-
-        # 发送思考和回复内容
-        if thinking_text:
-            yield sse("thinking", {"text": thinking_text})
-        if content_text:
-            yield sse("content", {"text": content_text})
 
         # Step 5: 完成
         yield sse("step", {"step": "done", "message": "分析完成"})

@@ -13,18 +13,6 @@
     <!-- 错误 -->
     <ErrorState v-if="errorMsg" :message="errorMsg" />
 
-    <!-- LLM 流式输出 -->
-    <div v-if="thinkingText || contentText" class="stream-output">
-      <div v-if="thinkingText" class="thinking-block">
-        <h4>思考过程</h4>
-        <pre class="thinking-text">{{ thinkingText }}</pre>
-      </div>
-      <div v-if="contentText" class="content-block">
-        <h4>AI 分析</h4>
-        <pre class="content-text">{{ contentText }}</pre>
-      </div>
-    </div>
-
     <!-- 最终结果 -->
     <template v-if="report && analysis">
       <h1>{{ report.repo.full_name }}</h1>
@@ -80,8 +68,6 @@ const repo = route.params.repo
 
 const steps = ref([])
 const errorMsg = ref('')
-const thinkingText = ref('')
-const contentText = ref('')
 const report = ref(null)
 const analysis = ref(null)
 
@@ -112,16 +98,6 @@ onMounted(() => {
         }
       }
     }
-  })
-
-  evtSource.addEventListener('thinking', (e) => {
-    const data = JSON.parse(e.data)
-    thinkingText.value += data.text
-  })
-
-  evtSource.addEventListener('content', (e) => {
-    const data = JSON.parse(e.data)
-    contentText.value += data.text
   })
 
   evtSource.addEventListener('result', (e) => {
@@ -169,7 +145,6 @@ onUnmounted(() => {
 }
 .back-link:hover { text-decoration: underline; }
 
-/* 步骤进度 */
 .steps {
   margin-bottom: 24px;
   padding: 16px;
@@ -190,38 +165,6 @@ onUnmounted(() => {
 .step.error { color: #f56c6c; }
 .step-icon { width: 16px; text-align: center; }
 
-/* 流式输出 */
-.stream-output {
-  margin-bottom: 24px;
-  padding: 16px;
-  background: #1a1a2e;
-  border-radius: 8px;
-  max-height: 400px;
-  overflow-y: auto;
-}
-.thinking-block { margin-bottom: 16px; }
-.thinking-block h4 { color: #888; margin: 0 0 8px; font-size: 13px; }
-.thinking-text {
-  color: #666;
-  font-size: 13px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: inherit;
-  margin: 0;
-}
-.content-block h4 { color: #409eff; margin: 0 0 8px; font-size: 13px; }
-.content-text {
-  color: #e0e0e0;
-  font-size: 14px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: inherit;
-  margin: 0;
-}
-
-/* 结果卡片 */
 h1 { font-size: 28px; margin: 0 0 8px; }
 .desc { color: #888; margin-bottom: 20px; }
 .score-badge {
