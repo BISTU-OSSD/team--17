@@ -1,105 +1,127 @@
-"""一键启动：先启动 llama.cpp server，再运行分析程序"""
-
+#!/usr/bin/env python
+"""DevSkillMapper 一键启动：llama.cpp + FastAPI 后端"""
 import subprocess
 import time
 import sys
 import os
+import signal
 import requests
-from config import LLAMA_SERVER, MODEL_PATH, HOST, PORT
-from config import check_environment
 
-HEALTH_URL = f"http://{HOST}:{PORT}/health"
+# ── 配置 ──────────────────────────────────────────────
+HOST = "127.0.0.1"
+LLAMA_PORT = 8080
+API_PORT = 8001
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+LLAMA_SERVER = os.path.join(ROOT_DIR, "llama-cpp", "llama-server.exe")
+MODEL_PATH = os.path.join(ROOT_DIR, "llama-cpp", "Qwen3.5-9B-Q4_K_M.gguf")
+
+procs = []
 
 
-def wait_server(timeout=120):
-    print("等待模型加载...", end="", flush=True)
+def log(msg: str = "", **kw):
+    print(msg, flush=True, **kw)
+
+
+def wait_for(url: str, timeout: int = 180, label: str = "服务") -> bool:
+    log(f"  等待 {label} 就绪", end="")
     start = time.time()
     while time.time() - start < timeout:
         try:
-            resp = requests.get(HEALTH_URL, timeout=2)
-            if resp.status_code == 200:
-                print(" 就绪!")
+            if requests.get(url, timeout=3).status_code == 200:
+                log(" ✓")
                 return True
         except Exception:
             pass
-        print(".", end="", flush=True)
-        time.sleep(2)
-    print("\n启动超时")
+        log(".", end="")
+        time.sleep(3)
+    log(f" ✗ 超时 ({timeout}s)")
     return False
 
 
+def cleanup(*_):
+    log("\n正在关闭服务...")
+    for p in procs:
+        try:
+            p.terminate()
+            p.wait(timeout=5)
+        except Exception:
+            p.kill()
+    log("已关闭")
+    sys.exit(0)
+
+
 def main():
-    check_environment()
-    # 检查参数
-    if len(sys.argv) == 1:
-        # 交互模式: 启动流式对话
-        mode = "chat"
-    elif len(sys.argv) == 3:
-        # 分析模式
-        input_path = sys.argv[1]
-        output_path = sys.argv[2]
-        
-        # 验证输入存在
-        if not os.path.exists(input_path):
-            print(f"错误: 输入路径不存在: {input_path}")
-            sys.exit(1)
-        
-        # 判断是批量还是单文件
-        if os.path.isdir(input_path):
-            mode = "batch"
-        else:
-            mode = "analyze"
-            
-            # 验证输出路径有效
-            output_dir = os.path.dirname(output_path)
-            if output_dir and not os.path.exists(output_dir):
-                try:
-                    os.makedirs(output_dir, exist_ok=True)
-                except Exception as e:
-                    print(f"错误: 无法创建输出目录: {e}")
-                    sys.exit(1)
-    else:
-        print("用法:")
-        print("  python run.py                                    # 交互对话模式")
-        print("  python run.py <输入文件> <输出文件>               # 单文件分析")
-        print("  python run.py <输入目录> <输出目录>               # 批量分析")
-        print("")
-        print("示例:")
-        print("  python run.py examples\\sample_input.txt result.json")
-        print("  python run.py projects/ results/")
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
+
+    if not os.path.exists(LLAMA_SERVER):
+        log(f"错误: 未找到 {LLAMA_SERVER}")
+        sys.exit(1)
+    if not os.path.exists(MODEL_PATH):
+        log(f"错误: 未找到模型 {MODEL_PATH}")
         sys.exit(1)
 
-    # 启动服务器
-    print("启动 llama.cpp 服务器...")
-    server_proc = subprocess.Popen([
-        LLAMA_SERVER, "-m", MODEL_PATH, "-ngl", "99", "-c", "4096",
-        "--host", HOST, "--port", str(PORT), "--reasoning", "on",
+    # ── 启动 llama.cpp ────────────────────────────────
+    log("=" * 50)
+    log("启动 llama.cpp 服务器")
+    log("=" * 50)
+    llama_proc = subprocess.Popen([
+        LLAMA_SERVER, "-m", MODEL_PATH,
+        "-ngl", "99", "-c", "4096",
+        "--host", HOST, "--port", str(LLAMA_PORT),
+        "--reasoning", "on",
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    procs.append(llama_proc)
 
+    if not wait_for(f"http://{HOST}:{LLAMA_PORT}/health", 300, "llama.cpp"):
+        cleanup()
+
+    # ── 启动 FastAPI ──────────────────────────────────
+    log("\n" + "=" * 50)
+    log("启动 FastAPI 后端")
+    log("=" * 50)
+    api_proc = subprocess.Popen([
+        sys.executable, "-m", "uvicorn", "app.main:app",
+        "--host", HOST, "--port", str(API_PORT),
+        "--log-level", "info",
+    ], cwd=ROOT_DIR)
+    procs.append(api_proc)
+
+    if not wait_for(f"http://{HOST}:{API_PORT}/api/health", 15, "FastAPI"):
+        cleanup()
+
+    # ── 快速验证 ──────────────────────────────────────
+    log("\n" + "=" * 50)
+    log("服务就绪，快速验证")
+    log("=" * 50)
+
+    health = requests.get(f"http://{HOST}:{API_PORT}/api/health").json()
+    log(f"  健康检查: {health['status']}")
+    log(f"  缓存条目: {health['cache_entries']}")
+
+    rate = requests.get(f"http://{HOST}:{API_PORT}/api/rate-limit").json()
+    log(f"  API Token: {'有' if rate['has_token'] else '无'}")
+    log(f"  剩余额度: {rate['remaining']}")
+
+    log("\n" + "=" * 50)
+    log(f"后端已启动")
+    log(f"  FastAPI:  http://{HOST}:{API_PORT}")
+    log(f"  llama:    http://{HOST}:{LLAMA_PORT}")
+    log(f"  分析接口: http://{HOST}:{API_PORT}/api/analyze/{{owner}}/{{repo}}")
+    log(f"  报告接口: POST http://{HOST}:{API_PORT}/api/report")
+    log("=" * 50)
+    log("按 Ctrl+C 停止\n")
+
+    # ── 保持运行 ──────────────────────────────────────
     try:
-        if not wait_server():
-            server_proc.terminate()
-            sys.exit(1)
-
-        if mode == "batch":
-            # 批量分析模式
-            script = os.path.join(os.path.dirname(__file__), "batch_analyze.py")
-            subprocess.run([sys.executable, script, input_path, output_path])
-        elif mode == "analyze":
-            # 单文件分析模式
-            script = os.path.join(os.path.dirname(__file__), "analyze.py")
-            subprocess.run([sys.executable, script, input_path, output_path])
-        else:
-            # 交互对话模式
-            script = os.path.join(os.path.dirname(__file__), "llama_stream.py")
-            subprocess.run([sys.executable, script])
-
+        while True:
+            time.sleep(1)
+            for p in procs:
+                if p.poll() is not None:
+                    log(f"\n进程异常退出 (code={p.returncode})")
+                    cleanup()
     except KeyboardInterrupt:
-        print("\n\n正在关闭...")
-    finally:
-        server_proc.terminate()
-        server_proc.wait()
-        print("Server 已关闭")
+        cleanup()
 
 
 if __name__ == "__main__":

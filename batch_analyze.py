@@ -30,10 +30,12 @@ def analyze_single(input_file, output_file):
     
     # 验证格式
     if not validate_analysis_result(result):
-        print(f"  警告: 输出格式不符合标准")
+        pass  # 格式警告已记录到errors.log
     
     # 写入输出
     if write_output_file(result, output_file):
+        if result.get("status") == "failed":
+            return True, "failed"
         return True, result.get("total_score", "N/A")
     else:
         return False, "写入文件失败"
@@ -93,15 +95,16 @@ def batch_analyze(input_path, output_path):
             try:
                 success, msg = analyze_single(input_file=txt_file, output_file=output_file)
                 
-                if success:
+                if success and msg == "failed":
+                    fail_count += 1
+                    errors.append((basename, "模型未返回有效JSON"))
+                elif success:
                     print(f"✓ (总分: {msg})")
                     success_count += 1
                 else:
-                    print(f"✗ ({msg})")
                     fail_count += 1
                     errors.append((basename, msg))
             except Exception as e:
-                print(f"✗ (异常: {e})")
                 fail_count += 1
                 errors.append((basename, str(e)))
         
@@ -114,13 +117,14 @@ def batch_analyze(input_path, output_path):
         print(f"  失败: {fail_count}/{total}")
         print(f"  耗时: {elapsed:.1f}秒")
         
-        # 记录错误
+        # 记录错误到单独的log文件夹
         if errors:
-            error_log = os.path.join(output_path, "errors.log")
+            log_dir = os.path.join(output_path, "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            error_log = os.path.join(log_dir, "errors.log")
             with open(error_log, "w", encoding="utf-8") as f:
                 for name, error in errors:
                     f.write(f"{name}: {error}\n")
-            print(f"  错误日志: {error_log}")
         
         return success_count
     

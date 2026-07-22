@@ -52,11 +52,20 @@ def analyze_github_project(text_content: str) -> Dict[str, Any]:
         try:
             analysis_result = json.loads(cleaned_result)
         except json.JSONDecodeError:
+            # 返回完整的失败结构，保证链路完整
+            repo_url = ""
+            for line in text_content.split("\n"):
+                if "GitHub地址:" in line:
+                    repo_url = line.split("GitHub地址:")[1].strip()
+                    break
             return {
-                "status": "error",
-                "error_type": "JSON_PARSE_ERROR",
-                "message": "LLM返回的不是有效JSON",
-                "raw_response": raw_result
+                "status": "failed",
+                "analysis_id": str(uuid.uuid4()),
+                "repo_url": repo_url,
+                "scores": {},
+                "total_score": 0.0,
+                "summary": "分析失败：模型未返回有效JSON",
+                "timestamp": datetime.now().isoformat()
             }
         
         # 提取项目名称（从输入文本中）
@@ -77,27 +86,19 @@ def analyze_github_project(text_content: str) -> Dict[str, Any]:
             "timestamp": datetime.now().isoformat()
         }
         
-        # 转换分数格式
-        score_mapping = {
-            "代码质量": "code_quality",
-            "社区活跃度": "community_activity", 
-            "更新频率": "update_frequency",
-            "文档完整性": "documentation",
-            "安全状况": "security",
-            "社区影响力": "community_impact"
-        }
-        
+        # 直接使用英文键名
         total_score = 0.0
         score_count = 0
         
-        for cn_name, en_name in score_mapping.items():
-            if cn_name in analysis_result.get("评分", {}):
-                score_data = analysis_result["评分"][cn_name]
+        for en_name in ["code_quality", "community_activity", "update_frequency", 
+                       "documentation", "security", "community_impact"]:
+            if en_name in analysis_result.get("scores", {}):
+                score_data = analysis_result["scores"][en_name]
                 standardized_result["scores"][en_name] = {
-                    "score": score_data.get("分数", 0),
-                    "detail": score_data.get("说明", "")
+                    "score": score_data.get("score", 0),
+                    "detail": score_data.get("detail", "")
                 }
-                total_score += score_data.get("分数", 0)
+                total_score += score_data.get("score", 0)
                 score_count += 1
         
         # 计算平均分
@@ -105,7 +106,7 @@ def analyze_github_project(text_content: str) -> Dict[str, Any]:
             standardized_result["total_score"] = round(total_score / score_count, 1)
         
         # 提取总结建议
-        standardized_result["summary"] = analysis_result.get("总结建议", "")
+        standardized_result["summary"] = analysis_result.get("summary", "")
         
         return standardized_result
         
