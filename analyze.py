@@ -11,14 +11,17 @@ from validators import validate_analysis_result
 
 def main():
     parser = argparse.ArgumentParser(description='GitHub项目分析工具')
-    parser.add_argument('input_file', help='上游输入文件路径（纯文本）')
+    parser.add_argument('input_file', help='上游输入文件路径（支持 .txt 或 .json）')
     parser.add_argument('output_file', help='输出JSON文件路径')
+    parser.add_argument('--input-format', choices=['auto', 'txt', 'json'],
+                       default='auto', help='输入格式（默认自动检测）')
     
     args = parser.parse_args()
     
     print(f"开始分析项目...")
     print(f"输入文件: {args.input_file}")
     print(f"输出文件: {args.output_file}")
+    print(f"输入格式: {args.input_format}")
     
     # 读取输入文件
     text_content = read_input_file(args.input_file)
