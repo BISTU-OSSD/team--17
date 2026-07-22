@@ -4,9 +4,12 @@ from datetime import datetime
 import requests
 import sys
 import json
-from config import MODEL_PATH, HOST, PORT
+import os
+from config import HOST, MODEL_PATH, PORT
 
-SERVER_URL = f"http://{HOST}:{PORT}/v1/chat/completions"
+# 优先读取云端/穿透环境变量 LLM_BASE_URL；如果没有配置，则回退到本地 config.py 的配置
+DEFAULT_SERVER_URL = f"http://{HOST}:{PORT}/v1/chat/completions"
+SERVER_URL = os.getenv("LLM_BASE_URL", DEFAULT_SERVER_URL)
 
 SYSTEM_PROMPT = """你是一个GitHub项目评估专家。请根据输入的GitHub项目数据，从以下6个维度进行评分分析，每个维度满分10分。
 
