@@ -120,7 +120,7 @@ def chat(system_prompt: str, content: str) -> str:
         "temperature": 0.6,
         "max_tokens": 8192,
         "reasoning_effort": "high",
-    })
+    }, timeout=30)
     resp.raise_for_status()
     msg = resp.json()["choices"][0]["message"]
     thinking = msg.get("reasoning_content", "")
@@ -142,7 +142,7 @@ def stream_chat(system_prompt: str, content: str) -> str:
         "max_tokens": 8192,
         "stream": True,
         "reasoning_effort": "high",
-    }, stream=True)
+    }, stream=True, timeout=30)
     resp.raise_for_status()
 
     thinking = True
