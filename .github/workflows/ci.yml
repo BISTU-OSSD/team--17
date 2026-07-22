@@ -1,0 +1,42 @@
+name: Python CI
+
+on:
+  push:
+    branches:
+      - main
+      - feature/analyze
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip" # 开启 pip 缓存，提升后续 CI 运行速度
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest pytest-cov
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run Linting (flake8)
+        run: |
+          # 检查是否有严重的 Python 语法错误，如果有则直接中止 CI
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Run tests with Coverage
+        env:
+          PYTHONPATH: .
+        run: |
+          # 运行测试并自动计算代码覆盖率
+          pytest --cov=src --cov-report=term-missing
