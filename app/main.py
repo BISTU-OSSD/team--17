@@ -18,7 +18,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 # 确保 src 模块可导入
@@ -196,41 +196,73 @@ async def get_repo_report(req: ReportRequest):
 @app.get("/api/analyze/{owner}/{repo}")
 async def analyze_repo(owner: str, repo: str):
     """
-    获取仓库报告 + LLM 分析（前端对接接口）。
+    流式分析 GitHub 仓库（SSE）。
 
-    输入 owner/repo，返回结构化报告 + AI 评分。
+    事件类型：
+      step   — 处理步骤进度
+      result — 最终完整结果
+      error  — 错误
     """
-    import re
+    import re, json as _json
+
     if not re.match(r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$", f"{owner}/{repo}"):
         raise HTTPException(status_code=400, detail="仓库路径格式无效")
 
     full_name = f"{owner}/{repo}"
     client = _get_client()
 
-    # 1. 获取 GitHub 数据报告
-    try:
-        report = await client.get_full_report(full_name)
-    except RepoNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except RateLimitExceededError as e:
-        raise HTTPException(status_code=429, detail=str(e))
-    except GitHubAPIError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    def sse(event: str, data) -> str:
+        return f"event: {event}\ndata: {_json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
-    # 2. 报告转文本
-    report_dict = report.model_dump()
-    text_content = convert_json_to_text(report_dict)
+    async def generate():
+        # Step 1: 校验
+        yield sse("step", {"step": "validating", "message": "校验仓库路径..."})
 
-    # 3. LLM 分析（同步调用，放到线程池避免阻塞）
-    loop = asyncio.get_running_loop()
-    analysis = await loop.run_in_executor(None, analyze_github_project, text_content)
+        # Step 2: 获取 GitHub 数据
+        yield sse("step", {"step": "fetching", "message": "正在从 GitHub 获取仓库数据..."})
+        try:
+            report = await client.get_full_report(full_name)
+        except RepoNotFoundError as e:
+            yield sse("error", {"message": str(e)})
+            return
+        except RateLimitExceededError as e:
+            yield sse("error", {"message": str(e)})
+            return
+        except GitHubAPIError as e:
+            yield sse("error", {"message": str(e)})
+            return
 
-    return {
-        "success": True,
-        "report": report_dict,
-        "analysis": analysis,
-        "rate_limit": client.rate_limit_info,
-    }
+        report_dict = report.model_dump()
+        yield sse("step", {"step": "fetched", "message": f"已获取 {full_name} 数据"})
+
+        # Step 3: 转文本
+        yield sse("step", {"step": "converting", "message": "转换为分析文本..."})
+        text_content = convert_json_to_text(report_dict)
+        yield sse("step", {"step": "converted", "message": "文本转换完成"})
+
+        # Step 4: LLM 分析
+        yield sse("step", {"step": "analyzing", "message": "AI 正在分析，请稍候..."})
+        loop = asyncio.get_running_loop()
+        analysis = await loop.run_in_executor(None, analyze_github_project, text_content)
+
+        # Step 5: 完成
+        yield sse("step", {"step": "done", "message": "分析完成"})
+        yield sse("result", {
+            "success": True,
+            "report": report_dict,
+            "analysis": analysis,
+            "rate_limit": client.rate_limit_info,
+        })
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.delete("/api/cache")
