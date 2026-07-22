@@ -20,5 +20,5 @@ COPY . .
 # 6. 暴露 8000 端口
 EXPOSE 8000
 
-# 7. 启动 FastAPI (假设入口文件是 run.py，里面有 app = FastAPI())
-CMD ["uvicorn", "run:app", "--host", "0.0.0.0", "--port", "8000"]
+# 7. 改用 python -m uvicorn 启动，防止找不到可执行路径
+CMD ["python", "-m", "uvicorn", "run:app", "--host", "0.0.0.0", "--port", "8000"]
