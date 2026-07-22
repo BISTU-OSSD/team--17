@@ -74,6 +74,7 @@ class AuthenticationError(GitHubAPIError):
 
 _PAGE_RE = re.compile(r'<([^>]+)>;\s*rel="(\w+)"')
 
+
 def _parse_link_header(link: str) -> dict[str, str]:
     """解析 Link 头，返回 {'next': url, 'last': url, ...}"""
     links: dict[str, str] = {}
@@ -227,12 +228,21 @@ class GitHubClient:
         return await self._request("GET", path, params=params, use_etag=use_etag)
 
     async def _get_json(self, path: str, params: dict | None = None) -> Any:
-        """GET 并自动解析 JSON，支持缓存"""
+        """GET 并自动解析 JSON，支持缓存 + ETag 条件请求"""
         cache_key = cache.make_key(path, "json")
         cached = await cache.get(cache_key)
         if cached is not None:
             return cached
-        resp = await self._get(path, params=params)
+
+        resp = await self._get(path, params=params, use_etag=True)
+        if resp.status_code == 304:
+            # ETag 命中，数据未变更 → 从本地缓存恢复
+            cached = await cache.get(cache_key)
+            if cached is not None:
+                return cached
+            # 缓存也丢失了（极端情况）→ 不带 ETag 强制重新获取
+            resp = await self._get(path, params=params)
+
         data = resp.json()
         await cache.set(cache_key, data)
         return data
@@ -329,7 +339,6 @@ class GitHubClient:
         """获取 Commit 活跃度统计"""
         owner, repo = full_name.split("/")
         since_90d = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
-        since_30d = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
 
         # 近 90 天 commit（最多 3 页，约 90 条）
         commits_90d = await self._paginate(
@@ -746,6 +755,7 @@ def _parse_dt(value: Optional[str]) -> Optional[datetime]:
         return datetime.fromisoformat(s)
     except (ValueError, TypeError):
         return None
+
 
 def _dt_str(value: Optional[str]) -> Optional[str]:
     """返回日期字符串 YYYY-MM-DD"""
