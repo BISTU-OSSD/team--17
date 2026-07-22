@@ -1,6 +1,8 @@
-requests>=2.31.0
-python-dotenv>=1.0.1
-pytest>=8.0.0
 fastapi
 uvicorn[standard]
+httpx
+certifi
+requests
+python-dotenv
+pytest
 pytest-cov
