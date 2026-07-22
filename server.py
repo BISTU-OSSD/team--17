@@ -20,6 +20,7 @@ app = FastAPI(title="GitHub 项目体检 API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
