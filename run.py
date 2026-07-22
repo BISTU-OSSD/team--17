@@ -5,11 +5,9 @@ import time
 import sys
 import os
 import requests
+from config import LLAMA_SERVER, MODEL_PATH, HOST, PORT
+from config import check_environment
 
-LLAMA_SERVER = r"D:\20260721\llama-cpp\llama-server.exe"
-MODEL_PATH = r"D:\20260721\llama-cpp\Qwen3.5-9B-Q4_K_M.gguf"
-HOST = "127.0.0.1"
-PORT = 8080
 HEALTH_URL = f"http://{HOST}:{PORT}/health"
 
 
@@ -31,6 +29,7 @@ def wait_server(timeout=120):
 
 
 def main():
+    check_environment()
     # 检查参数
     if len(sys.argv) == 1:
         # 交互模式: 启动流式对话
