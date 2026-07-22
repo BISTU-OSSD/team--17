@@ -2,11 +2,31 @@
   <div class="report-page">
     <router-link to="/" class="back-link">← 返回</router-link>
 
-    <LoadingState v-if="loading" />
+    <!-- 步骤进度 -->
+    <div v-if="steps.length" class="steps">
+      <div v-for="(s, i) in steps" :key="i" class="step" :class="s.status">
+        <span class="step-icon">{{ s.status === 'done' ? '✓' : s.status === 'error' ? '✗' : '●' }}</span>
+        <span>{{ s.message }}</span>
+      </div>
+    </div>
 
-    <ErrorState v-else-if="errorMsg" :message="errorMsg" />
+    <!-- 错误 -->
+    <ErrorState v-if="errorMsg" :message="errorMsg" />
 
-    <template v-else-if="report && analysis">
+    <!-- LLM 流式输出 -->
+    <div v-if="thinkingText || contentText" class="stream-output">
+      <div v-if="thinkingText" class="thinking-block">
+        <h4>思考过程</h4>
+        <pre class="thinking-text">{{ thinkingText }}</pre>
+      </div>
+      <div v-if="contentText" class="content-block">
+        <h4>AI 分析</h4>
+        <pre class="content-text">{{ contentText }}</pre>
+      </div>
+    </div>
+
+    <!-- 最终结果 -->
+    <template v-if="report && analysis">
       <h1>{{ report.repo.full_name }}</h1>
       <p class="desc">{{ report.repo.description || '暂无描述' }}</p>
 
@@ -45,42 +65,92 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import RepoBasicInfo from '../components/RepoBasicInfo.vue'
 import TechStackChart from '../components/TechStackChart.vue'
 import RadarChart from '../components/RadarChart.vue'
 import CommunityProfile from '../components/CommunityProfile.vue'
 import RepoRecommendations from '../components/RepoRecommendations.vue'
-import LoadingState from '../components/LoadingState.vue'
 import ErrorState from '../components/ErrorState.vue'
 
 const route = useRoute()
 const owner = route.params.owner
 const repo = route.params.repo
 
-const loading = ref(true)
+const steps = ref([])
 const errorMsg = ref('')
+const thinkingText = ref('')
+const contentText = ref('')
 const report = ref(null)
 const analysis = ref(null)
 
-onMounted(async () => {
-  try {
-    const res = await fetch(`/api/analyze/${owner}/${repo}`)
-    const data = await res.json()
+let evtSource = null
 
-    if (!res.ok) {
-      errorMsg.value = data.detail || data.error || '请求失败'
-      return
+onMounted(() => {
+  evtSource = new EventSource(`/api/analyze/${owner}/${repo}`)
+
+  evtSource.addEventListener('step', (e) => {
+    const data = JSON.parse(e.data)
+    const existing = steps.value.find(s => s.step === data.step)
+    if (existing) {
+      existing.message = data.message
+      existing.status = data.step === 'done' ? 'done' : 'active'
+    } else {
+      steps.value.push({
+        step: data.step,
+        message: data.message,
+        status: data.step === 'done' ? 'done' : 'active',
+      })
     }
+    // 标记之前的步骤为完成
+    if (data.step !== 'validating') {
+      const idx = steps.value.findIndex(s => s.step === data.step)
+      for (let i = 0; i < idx; i++) {
+        if (steps.value[i].status !== 'done' && steps.value[i].status !== 'error') {
+          steps.value[i].status = 'done'
+        }
+      }
+    }
+  })
 
+  evtSource.addEventListener('thinking', (e) => {
+    const data = JSON.parse(e.data)
+    thinkingText.value += data.text
+  })
+
+  evtSource.addEventListener('content', (e) => {
+    const data = JSON.parse(e.data)
+    contentText.value += data.text
+  })
+
+  evtSource.addEventListener('result', (e) => {
+    const data = JSON.parse(e.data)
     report.value = data.report
     analysis.value = data.analysis
-  } catch (e) {
-    errorMsg.value = '网络错误，请检查后端是否启动'
-  } finally {
-    loading.value = false
+    evtSource.close()
+  })
+
+  evtSource.addEventListener('error', (e) => {
+    if (e.data) {
+      const data = JSON.parse(e.data)
+      errorMsg.value = data.message
+    } else {
+      errorMsg.value = '连接中断，请重试'
+    }
+    evtSource.close()
+  })
+
+  evtSource.onerror = () => {
+    if (!report.value && !errorMsg.value) {
+      errorMsg.value = '连接失败，请检查后端是否启动'
+    }
+    evtSource.close()
   }
+})
+
+onUnmounted(() => {
+  if (evtSource) evtSource.close()
 })
 </script>
 
@@ -97,17 +167,63 @@ onMounted(async () => {
   text-decoration: none;
   font-size: 14px;
 }
-.back-link:hover {
-  text-decoration: underline;
+.back-link:hover { text-decoration: underline; }
+
+/* 步骤进度 */
+.steps {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
 }
-h1 {
-  font-size: 28px;
-  margin: 0 0 8px;
-}
-.desc {
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 14px;
   color: #888;
-  margin-bottom: 20px;
+  transition: color 0.3s;
 }
+.step.active { color: #409eff; font-weight: 500; }
+.step.done { color: #67c23a; }
+.step.error { color: #f56c6c; }
+.step-icon { width: 16px; text-align: center; }
+
+/* 流式输出 */
+.stream-output {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #1a1a2e;
+  border-radius: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.thinking-block { margin-bottom: 16px; }
+.thinking-block h4 { color: #888; margin: 0 0 8px; font-size: 13px; }
+.thinking-text {
+  color: #666;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  margin: 0;
+}
+.content-block h4 { color: #409eff; margin: 0 0 8px; font-size: 13px; }
+.content-text {
+  color: #e0e0e0;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  margin: 0;
+}
+
+/* 结果卡片 */
+h1 { font-size: 28px; margin: 0 0 8px; }
+.desc { color: #888; margin-bottom: 20px; }
 .score-badge {
   display: inline-flex;
   align-items: baseline;
@@ -117,30 +233,14 @@ h1 {
   border-radius: 20px;
   margin-bottom: 24px;
 }
-.score-badge .score {
-  font-size: 32px;
-  font-weight: bold;
-  color: #409eff;
-}
-.score-badge .label {
-  font-size: 14px;
-  color: #888;
-}
-.grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 16px;
-}
+.score-badge .score { font-size: 32px; font-weight: bold; color: #409eff; }
+.score-badge .label { font-size: 14px; color: #888; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 .card {
   border: 1px solid #eee;
   border-radius: 8px;
   padding: 20px;
   margin-bottom: 16px;
 }
-@media (max-width: 640px) {
-  .grid {
-    grid-template-columns: 1fr;
-  }
-}
+@media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
 </style>
