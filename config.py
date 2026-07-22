@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv('.env.llm')
 
 # 项目根目录（config.py 所在目录）
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
