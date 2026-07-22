@@ -1,14 +1,21 @@
 <template>
-  <div class="rec-card">
-    <h3>推荐评语</h3>
-    <p>整体质量优秀，结构清晰，非常适合前端练习案例</p >
+  <div>
+    <h3>AI 分析总结</h3>
+    <p class="summary">{{ summary || '暂无总结' }}</p>
   </div>
 </template>
 
+<script setup>
+defineProps({
+  summary: { type: String, default: '' }
+})
+</script>
+
 <style scoped>
-.rec-card{
-  border:1px solid #eee;
-  padding:16px;
-  border-radius:8px;
+h3 { margin: 0 0 12px; font-size: 16px; }
+.summary {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #555;
 }
 </style>

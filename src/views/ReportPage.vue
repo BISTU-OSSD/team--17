@@ -1,72 +1,146 @@
 <template>
-  <div style="padding: 30px;">
-    <div v-if="owner === 'test' && repo === 'demo'">
-      <h3>项目基本信息</h3>
-      <ul style="padding-left: 20px;">
-        <li>项目名称：开源项目</li>
-        <li>收藏数：2368</li>
-        <li>复刻数：521</li>
-      </ul>
+  <div class="report-page">
+    <router-link to="/" class="back-link">← 返回</router-link>
 
-      <h3 style="margin-top: 24px;">技术栈标签</h3>
-      <div style="margin:8px 0;">
-        <span style="background:#428bff;color:white;padding:5px 10px;border-radius:4px;margin-right:10px;">Vue3</span>
-        <span style="background:#428bff;color:white;padding:5px 10px;border-radius:4px;margin-right:10px;">ECharts</span>
-        <span style="background:#428bff;color:white;padding:5px 10px;border-radius:4px;">JavaScript</span>
+    <LoadingState v-if="loading" />
+
+    <ErrorState v-else-if="errorMsg" :message="errorMsg" />
+
+    <template v-else-if="report && analysis">
+      <h1>{{ report.repo.full_name }}</h1>
+      <p class="desc">{{ report.repo.description || '暂无描述' }}</p>
+
+      <div class="score-badge">
+        <span class="score">{{ analysis.total_score }}</span>
+        <span class="label">/ 10</span>
       </div>
 
-      <h3 style="margin-top: 24px;">社区活跃度介绍</h3>
-      <p>社区交流频繁，维护频率稳定，适合新手学习使用</p >
+      <div class="grid">
+        <div class="card">
+          <RepoBasicInfo :repo="report.repo" />
+        </div>
+        <div class="card">
+          <TechStackChart :languages="report.languages.languages" />
+        </div>
+      </div>
 
-      <h3 style="margin-top: 24px;">推荐评语</h3>
-      <p>整体质量优秀，结构清晰，非常适合前端练习案例</p >
+      <div class="card">
+        <RadarChart :scores="analysis.scores" />
+      </div>
 
-      <div ref="chartRef" style="width: 480px;height: 420px;margin-top:15px;"></div>
-    </div>
-    <div v-else>仓库不存在</div>
+      <div class="grid">
+        <div class="card">
+          <CommunityProfile
+            :contributors="report.contributors"
+            :commits="report.commits"
+            :issues="report.issues"
+          />
+        </div>
+        <div class="card">
+          <RepoRecommendations :summary="analysis.summary" />
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup>
+import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { ref, onMounted, nextTick } from 'vue'
-import * as echarts from 'echarts'
+import RepoBasicInfo from '../components/RepoBasicInfo.vue'
+import TechStackChart from '../components/TechStackChart.vue'
+import RadarChart from '../components/RadarChart.vue'
+import CommunityProfile from '../components/CommunityProfile.vue'
+import RepoRecommendations from '../components/RepoRecommendations.vue'
+import LoadingState from '../components/LoadingState.vue'
+import ErrorState from '../components/ErrorState.vue'
 
 const route = useRoute()
 const owner = route.params.owner
 const repo = route.params.repo
-const chartRef = ref(null)
 
-nextTick(() => {
-  const myChart = echarts.init(chartRef.value)
-  myChart.clear()
-  const option = {
-    radar: {
-      shape: 'polygon',
-      startAngle: 90,
-      indicator: [
-        { name: '学习力', max: 100 },
-        { name: '自律性', max: 100 },
-        { name: '执行力', max: 100 },
-        { name: '创造力', max: 100 },
-        { name: '思考能力', max: 100 }
-      ],
-      splitNumber: 4
-    },
-    series: [{
-      type: 'radar',
-      data: [88, 40, 82, 55, 70],
-      symbol: 'circle',
-      symbolSize: 6,
-      lineStyle: {
-        color: '#428bff',
-        width: 2
-      },
-      areaStyle: {
-        color: 'rgba(66, 139, 255, 0.25)'
-      }
-    }]
+const loading = ref(true)
+const errorMsg = ref('')
+const report = ref(null)
+const analysis = ref(null)
+
+onMounted(async () => {
+  try {
+    const res = await fetch(`/api/analyze/${owner}/${repo}`)
+    const data = await res.json()
+
+    if (!res.ok) {
+      errorMsg.value = data.detail || data.error || '请求失败'
+      return
+    }
+
+    report.value = data.report
+    analysis.value = data.analysis
+  } catch (e) {
+    errorMsg.value = '网络错误，请检查后端是否启动'
+  } finally {
+    loading.value = false
   }
-  myChart.setOption(option, true)
 })
 </script>
+
+<style scoped>
+.report-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 30px 20px;
+}
+.back-link {
+  display: inline-block;
+  margin-bottom: 20px;
+  color: #409eff;
+  text-decoration: none;
+  font-size: 14px;
+}
+.back-link:hover {
+  text-decoration: underline;
+}
+h1 {
+  font-size: 28px;
+  margin: 0 0 8px;
+}
+.desc {
+  color: #888;
+  margin-bottom: 20px;
+}
+.score-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  background: #f0f9ff;
+  padding: 8px 20px;
+  border-radius: 20px;
+  margin-bottom: 24px;
+}
+.score-badge .score {
+  font-size: 32px;
+  font-weight: bold;
+  color: #409eff;
+}
+.score-badge .label {
+  font-size: 14px;
+  color: #888;
+}
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.card {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
