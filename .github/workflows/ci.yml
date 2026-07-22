@@ -41,4 +41,4 @@ jobs:
           PYTHONPATH: .
         run: |
           # 运行测试并自动计算代码覆盖率
-          pytest --cov=src --cov-report=term-missing
+          pytest --cov=src --cov=app --cov-report=term-missing
