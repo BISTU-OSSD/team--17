@@ -2,13 +2,17 @@
 DevSkillMapper - FastAPI 后端入口
 
 提供 REST API：
-  POST /api/report      — 获取仓库体检报告
-  GET  /api/health       — 健康检查
-  GET  /api/rate-limit   — 查询 API 限流状态
-  DELETE /api/cache      — 清空缓存
+  POST /api/report           — 获取仓库体检报告
+  GET  /api/analyze/{o}/{r}  — 获取报告 + LLM 分析（前端对接）
+  GET  /api/health            — 健康检查
+  GET  /api/rate-limit        — 查询 API 限流状态
+  DELETE /api/cache           — 清空缓存
 """
 from __future__ import annotations
 
+import asyncio
+import sys
+import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -16,6 +20,11 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+# 确保 src 模块可导入
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src.json_to_text import convert_json_to_text
+from src.analyzer import analyze_github_project
 
 from .cache import cache
 from .github_client import (
@@ -180,6 +189,46 @@ async def get_repo_report(req: ReportRequest):
     return {
         "success": True,
         "data": report.model_dump(),
+        "rate_limit": client.rate_limit_info,
+    }
+
+
+@app.get("/api/analyze/{owner}/{repo}")
+async def analyze_repo(owner: str, repo: str):
+    """
+    获取仓库报告 + LLM 分析（前端对接接口）。
+
+    输入 owner/repo，返回结构化报告 + AI 评分。
+    """
+    import re
+    if not re.match(r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$", f"{owner}/{repo}"):
+        raise HTTPException(status_code=400, detail="仓库路径格式无效")
+
+    full_name = f"{owner}/{repo}"
+    client = _get_client()
+
+    # 1. 获取 GitHub 数据报告
+    try:
+        report = await client.get_full_report(full_name)
+    except RepoNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RateLimitExceededError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    except GitHubAPIError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    # 2. 报告转文本
+    report_dict = report.model_dump()
+    text_content = convert_json_to_text(report_dict)
+
+    # 3. LLM 分析（同步调用，放到线程池避免阻塞）
+    loop = asyncio.get_running_loop()
+    analysis = await loop.run_in_executor(None, analyze_github_project, text_content)
+
+    return {
+        "success": True,
+        "report": report_dict,
+        "analysis": analysis,
         "rate_limit": client.rate_limit_info,
     }
 
