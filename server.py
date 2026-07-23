@@ -243,7 +243,7 @@ def get_current_date() -> str:
 async def stream_analysis(owner: str, repo: str):
     """流式分析 GitHub 仓库，实时返回 LLM 思考过程"""
 
-    async def event_generator():
+    async def event_generator(owner: str, repo: str):
         try:
             # 发送开始事件
             yield f"data: {json.dumps({'type': 'start', 'message': '开始分析...'})}\n\n"
@@ -348,12 +348,14 @@ async def stream_analysis(owner: str, repo: str):
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(
-        event_generator(),
+        event_generator(owner, repo),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Credentials": "true",
         }
     )
 
