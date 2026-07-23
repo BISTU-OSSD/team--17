@@ -11,6 +11,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from llama_chat import chat, stream_chat, SYSTEM_PROMPT, SERVER_URL, MODEL_PATH
 
+
+def get_current_date() -> str:
+    return "today is " + datetime.now().strftime("%Y/%m/%d")
+
+
 def analyze_github_project(text_content: str) -> Dict[str, Any]:
     """
     分析GitHub项目，返回标准化JSON结果
@@ -23,7 +28,7 @@ def analyze_github_project(text_content: str) -> Dict[str, Any]:
     """
     try:
         # 调用LLM分析（流式输出）
-        prompt = SYSTEM_PROMPT + "\n" + text_content
+        prompt = SYSTEM_PROMPT + "\n" + get_current_date() + "\n" + text_content
         raw_result = stream_chat(prompt, "请评估以上GitHub项目")
         
         # 清理可能的thinking标签和markdown代码块
