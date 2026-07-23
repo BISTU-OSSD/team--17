@@ -11,8 +11,8 @@ load_dotenv(find_dotenv())
 GITHUB_API_BASE = "https://api.github.com"
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
-# SSL 验证：生产环境建议设为 true，部分 Windows 开发环境需设为 false
-VERIFY_SSL = os.getenv("VERIFY_SSL", "true").lower() != "false"
+# SSL 验证：Windows 开发环境 certifi 证书链不完整，默认 false
+VERIFY_SSL = os.getenv("VERIFY_SSL", "false").lower() != "false"
 
 # 缓存配置
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "600"))      # 默认 10 分钟
