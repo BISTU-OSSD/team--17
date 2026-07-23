@@ -1,0 +1,27 @@
+# 忽略后端文件
+server.py
+config.py
+llama_chat.py
+llama_stream.py
+run.py
+run_llm.py
+analyze.py
+batch_analyze.py
+app/
+llama-cpp/
+tests/
+__pycache__/
+*.pyc
+.env
+.env.*
+!env.production
+scripts/
+docs/
+examples/
+Dockerfile
+docker-compose*.yml
+requirements*.txt
+package-lock.json
+node_modules/
+start.bat
+start.ps1
