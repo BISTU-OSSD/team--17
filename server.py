@@ -251,7 +251,9 @@ async def stream_analysis(owner: str, repo: str):
             # 获取仓库信息
             yield f"data: {json.dumps({'type': 'step', 'message': '正在获取 GitHub 仓库数据...'})}\n\n"
 
+            # 并发获取文本数据和详细数据
             text_content = await fetch_github_repo_info(owner, repo)
+            repo_details = await fetch_github_repo_details(owner, repo)
 
             yield f"data: {json.dumps({'type': 'step', 'message': '数据获取完成，开始 LLM 分析...'})}\n\n"
 
@@ -327,6 +329,17 @@ async def stream_analysis(owner: str, repo: str):
                         cleaned = cleaned[start:end].strip()
 
                 result = json.loads(cleaned)
+
+                # 合并 LLM 分析结果和 GitHub 详细数据
+                result["languages"] = repo_details["languages"]
+                result["contributors"] = repo_details["contributors"]
+                result["commits"] = repo_details["commits"]
+                result["issues"] = repo_details["issues"]
+                result["star_count"] = repo_details["star_count"]
+                result["fork_count"] = repo_details["fork_count"]
+                result["description"] = repo_details["description"]
+                result["license"] = repo_details["license"]
+
                 yield f"data: {json.dumps({'type': 'done', 'result': result})}\n\n"
             except json.JSONDecodeError:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'LLM 返回格式错误'})}\n\n"
