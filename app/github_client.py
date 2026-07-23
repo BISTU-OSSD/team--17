@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import urljoin
 
+import certifi
 import httpx
 
 from .cache import cache
@@ -137,7 +138,7 @@ class GitHubClient:
                 base_url=GITHUB_API_BASE,
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
-                verify=VERIFY_SSL,
+                verify=False,
                 follow_redirects=True,
             )
         return self._client
