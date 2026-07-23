@@ -192,34 +192,56 @@ async function fallbackToNormalApi() {
   try {
     steps.value = [{ step: 'loading', message: '正在分析仓库...', status: 'active' }]
 
-    const response = await fetch(`${apiBaseUrl}/api/analyze/${owner}/${repo}`, {
+    const resp = await fetch(`${apiBaseUrl}/api/analyze/${owner}/${repo}`, {
       headers: isNgrok ? NGROK_HEADERS : {},
     })
-    const data = await response.json()
 
-    if (!response.ok) {
-      throw new Error(data.detail || '分析失败')
-    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
 
-    report.value = {
-      repo: {
-        full_name: data.repo_url?.replace('https://github.com/', '') || `${owner}/${repo}`,
-        description: data.description || data.summary || '',
-        stargazers_count: data.star_count || 0,
-        forks_count: data.fork_count || 0
-      },
-      languages: data.languages || [],
-      contributors: data.contributors || {},
-      commits: data.commits || {},
-      issues: data.issues || {}
-    }
-    analysis.value = {
-      total_score: data.total_score,
-      scores: data.scores,
-      summary: data.summary
-    }
+    const reader = resp.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
 
-    steps.value = [{ step: 'done', message: '分析完成', status: 'done' }]
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      let eventType = ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim()
+        } else if (line.startsWith('data: ')) {
+          const data = JSON.parse(line.slice(6))
+          if (eventType === 'result' || (data.success !== undefined)) {
+            // 最终结果
+            report.value = {
+              repo: {
+                full_name: data.report?.full_name || `${owner}/${repo}`,
+                description: data.report?.description || data.analysis?.summary || '',
+                stargazers_count: data.report?.stargazers_count || 0,
+                forks_count: data.report?.forks_count || 0
+              },
+              languages: data.report?.languages || [],
+              contributors: data.report?.contributors || {},
+              commits: data.report?.commits || {},
+              issues: data.report?.issues || {}
+            }
+            analysis.value = {
+              total_score: data.analysis?.total_score,
+              scores: data.analysis?.scores,
+              summary: data.analysis?.summary
+            }
+            steps.value = [{ step: 'done', message: '分析完成', status: 'done' }]
+            return
+          }
+          eventType = ''
+        }
+      }
+    }
   } catch (error) {
     errorMsg.value = error.message || '连接失败，请检查后端是否启动'
     steps.value = [{ step: 'error', message: errorMsg.value, status: 'error' }]
