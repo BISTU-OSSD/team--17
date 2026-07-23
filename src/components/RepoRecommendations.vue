@@ -1,7 +1,8 @@
 <template>
-  <div>
-    <h3>AI 分析总结</h3>
-    <p class="summary">{{ summary || '暂无总结' }}</p>
+  <div class="recommendations">
+    <div class="summary-content">
+      <p class="summary">{{ summary || '暂无总结' }}</p>
+    </div>
   </div>
 </template>
 
@@ -12,10 +13,22 @@ defineProps({
 </script>
 
 <style scoped>
-h3 { margin: 0 0 12px; font-size: 16px; }
+.recommendations {
+  position: relative;
+}
+
+.summary-content {
+  position: relative;
+  padding: 20px;
+  background: linear-gradient(135deg, var(--accent-bg) 0%, rgba(167, 139, 250, 0.05) 100%);
+  border-radius: 12px;
+  border-left: 4px solid var(--accent);
+}
+
 .summary {
-  font-size: 14px;
-  line-height: 1.7;
-  color: #555;
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--text);
+  margin: 0;
 }
 </style>

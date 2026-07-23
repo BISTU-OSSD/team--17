@@ -1,14 +1,35 @@
 <template>
-  <div>
-    <h3>项目基本信息</h3>
-    <ul class="info-list">
-      <li><span class="label">项目名称</span><span class="value">{{ repo.full_name }}</span></li>
-      <li><span class="label">Star</span><span class="value">{{ repo.stars }}</span></li>
-      <li><span class="label">Fork</span><span class="value">{{ repo.forks }}</span></li>
-      <li><span class="label">主要语言</span><span class="value">{{ repo.language || '未知' }}</span></li>
-      <li><span class="label">许可证</span><span class="value">{{ repo.license || '未知' }}</span></li>
-      <li><span class="label">Open Issues</span><span class="value">{{ repo.open_issues_count }}</span></li>
-    </ul>
+  <div class="info-grid">
+    <div class="info-item">
+      <span class="info-label">Star</span>
+      <span class="info-value star">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
+        {{ repo.stars }}
+      </span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Fork</span>
+      <span class="info-value fork">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="18" r="3"/>
+          <circle cx="6" cy="6" r="3"/>
+          <circle cx="18" cy="6" r="3"/>
+          <path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9"/>
+          <path d="M12 12v3"/>
+        </svg>
+        {{ repo.forks }}
+      </span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">语言</span>
+      <span class="info-value">{{ repo.language || '未知' }}</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">许可证</span>
+      <span class="info-value">{{ repo.license || '未知' }}</span>
+    </div>
   </div>
 </template>
 
@@ -19,19 +40,59 @@ defineProps({
 </script>
 
 <style scoped>
-h3 { margin: 0 0 12px; font-size: 16px; }
-.info-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
 }
-.info-list li {
+
+.info-item {
   display: flex;
-  justify-content: space-between;
-  padding: 6px 0;
-  border-bottom: 1px solid #f5f5f5;
-  font-size: 14px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  background: var(--accent-bg);
+  border-radius: 8px;
 }
-.label { color: #888; }
-.value { color: #333; font-weight: 500; }
+
+.info-label {
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.info-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-h);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.info-value.star {
+  color: #f59e0b;
+}
+
+.info-value.star svg {
+  width: 18px;
+  height: 18px;
+}
+
+.info-value.fork {
+  color: var(--accent);
+}
+
+.info-value.fork svg {
+  width: 18px;
+  height: 18px;
+}
+
+@media (max-width: 480px) {
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

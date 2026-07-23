@@ -1,5 +1,5 @@
 <template>
-  <div ref="chartDom" style="width: 100%; height: 380px;"></div>
+  <div ref="chartDom" class="radar-container"></div>
 </template>
 
 <script setup>
@@ -32,20 +32,66 @@ function renderChart() {
   })
 
   chart.setOption({
-    tooltip: { trigger: 'item' },
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      borderColor: '#eee',
+      textStyle: { color: '#333' }
+    },
     radar: {
-      radius: '65%',
+      radius: '70%',
       indicator: DIMENSIONS.map(d => ({ name: d.name, max: 100 })),
       shape: 'polygon',
-      splitNumber: 4,
-      axisName: { fontSize: 12 },
+      splitNumber: 5,
+      axisName: {
+        fontSize: 12,
+        color: '#666',
+        fontWeight: 500
+      },
+      splitLine: {
+        lineStyle: {
+          color: 'rgba(124, 58, 237, 0.1)'
+        }
+      },
+      splitArea: {
+        areaStyle: {
+          color: ['rgba(124, 58, 237, 0.02)', 'rgba(124, 58, 237, 0.05)']
+        }
+      },
+      axisLine: {
+        lineStyle: {
+          color: 'rgba(124, 58, 237, 0.15)'
+        }
+      }
     },
     series: [{
       type: 'radar',
-      data: [{ value: values }],
-      areaStyle: { opacity: 0.25 },
-      lineStyle: { width: 2, color: '#409eff' },
-      itemStyle: { color: '#409eff' },
+      data: [{
+        value: values,
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(124, 58, 237, 0.4)' },
+              { offset: 1, color: 'rgba(167, 139, 250, 0.2)' }
+            ]
+          }
+        },
+        lineStyle: {
+          width: 3,
+          color: '#7c3aed'
+        },
+        itemStyle: {
+          color: '#7c3aed',
+          borderColor: '#fff',
+          borderWidth: 2
+        },
+        symbol: 'circle',
+        symbolSize: 8
+      }],
+      animationDuration: 1000,
+      animationEasing: 'cubicOut'
     }],
   })
 }
@@ -53,3 +99,22 @@ function renderChart() {
 onMounted(renderChart)
 watch(() => props.scores, renderChart, { deep: true })
 </script>
+
+<style scoped>
+.radar-container {
+  width: 100%;
+  height: 320px;
+  animation: fadeIn 0.8s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+</style>

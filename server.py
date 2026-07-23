@@ -4,6 +4,9 @@ import sys
 import os
 import re
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import certifi
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -11,6 +14,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # SSL 验证：Windows 环境默认关闭
 VERIFY_SSL = os.getenv("VERIFY_SSL", "false").lower() != "false"
+
+# GitHub Token（可选，提高 API 速率限制）
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 from analyzer import analyze_github_project
@@ -27,6 +33,8 @@ app.add_middleware(
 
 _GITHUB_API = "https://api.github.com"
 _HEADERS = {"Accept": "application/vnd.github.v3+json"}
+if GITHUB_TOKEN:
+    _HEADERS["Authorization"] = f"token {GITHUB_TOKEN}"
 _REPO_RE = re.compile(r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$")
 
 
@@ -72,18 +80,113 @@ Fork数: {data.get("forks_count", 0)}
     return text
 
 
+async def fetch_github_repo_details(owner: str, repo: str) -> dict:
+    """获取 GitHub 仓库详细数据，用于前端展示"""
+    api_url = f"{_GITHUB_API}/repos/{owner}/{repo}"
+
+    ssl_ctx = certifi.where() if VERIFY_SSL else False
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True, verify=ssl_ctx) as client:
+        try:
+            resp = await client.get(api_url, headers=_HEADERS)
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=502, detail=f"GitHub API 返回错误: {e.response.status_code}")
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=502, detail=f"无法访问 GitHub API: {e}")
+
+        # 获取语言列表（带百分比）
+        languages = []
+        languages_url = data.get("languages_url", "")
+        if languages_url:
+            try:
+                lang_resp = await client.get(languages_url, headers=_HEADERS, timeout=10)
+                if lang_resp.is_success:
+                    lang_data = lang_resp.json()
+                    total_bytes = sum(lang_data.values())
+                    for lang, bytes_count in lang_data.items():
+                        languages.append({
+                            "language": lang,
+                            "percentage": round(bytes_count / total_bytes * 100, 1) if total_bytes > 0 else 0
+                        })
+            except httpx.RequestError:
+                pass
+
+        # 获取贡献者信息
+        contributors = {"total_contributors": 0, "active_30d_contributors": 0, "bus_factor": 0}
+        contributors_url = data.get("contributors_url", "")
+        if contributors_url:
+            try:
+                contrib_resp = await client.get(f"{contributors_url}?per_page=100", headers=_HEADERS, timeout=10)
+                if contrib_resp.is_success:
+                    contrib_data = contrib_resp.json()
+                    contributors["total_contributors"] = len(contrib_data)
+            except httpx.RequestError:
+                pass
+
+        # 获取 commits 信息
+        commits = {"commits_last_30_days": 0, "commit_frequency_per_week": 0}
+        commits_url = f"{_GITHUB_API}/repos/{owner}/{repo}/commits"
+        try:
+            commits_resp = await client.get(f"{commits_url}?per_page=100", headers=_HEADERS, timeout=10)
+            if commits_resp.is_success:
+                commits_data = commits_resp.json()
+                commits["commits_last_30_days"] = len(commits_data)
+                commits["commit_frequency_per_week"] = round(len(commits_data) / 4, 1)
+        except httpx.RequestError:
+            pass
+
+        # 获取 issues 信息
+        issues = {"close_rate": 0}
+        issues_url = f"{_GITHUB_API}/repos/{owner}/{repo}/issues?state=all&per_page=100"
+        try:
+            issues_resp = await client.get(issues_url, headers=_HEADERS, timeout=10)
+            if issues_resp.is_success:
+                issues_data = issues_resp.json()
+                total_issues = len(issues_data)
+                closed_issues = sum(1 for i in issues_data if i.get("state") == "closed")
+                issues["close_rate"] = round(closed_issues / total_issues, 2) if total_issues > 0 else 0
+        except httpx.RequestError:
+            pass
+
+    return {
+        "languages": languages,
+        "contributors": contributors,
+        "commits": commits,
+        "issues": issues,
+        "star_count": data.get("stargazers_count", 0),
+        "fork_count": data.get("forks_count", 0),
+        "description": data.get("description", ""),
+        "license": data.get("license", {}).get("spdx_id", "未知") if data.get("license") else "未知",
+    }
+
+
 @app.get("/api/analyze/{owner}/{repo}")
 async def analyze_repo(owner: str, repo: str):
     """分析 GitHub 仓库，返回评分结果"""
     if not _REPO_RE.match(f"{owner}/{repo}"):
         raise HTTPException(status_code=400, detail="仓库路径格式无效")
 
+    # 获取详细数据用于前端展示
+    repo_details = await fetch_github_repo_details(owner, repo)
+
+    # 获取文本数据用于 LLM 分析
     text_content = await fetch_github_repo_info(owner, repo)
 
     try:
         result = analyze_github_project(text_content)
         if result.get("status") == "error":
             raise HTTPException(status_code=500, detail=result.get("message", "分析失败"))
+
+        # 合并 LLM 分析结果和 GitHub 详细数据
+        result["languages"] = repo_details["languages"]
+        result["contributors"] = repo_details["contributors"]
+        result["commits"] = repo_details["commits"]
+        result["issues"] = repo_details["issues"]
+        result["star_count"] = repo_details["star_count"]
+        result["fork_count"] = repo_details["fork_count"]
+        result["description"] = repo_details["description"]
+        result["license"] = repo_details["license"]
         return result
     except Exception as e:
         # LLM 服务不可用时，返回基本数据
@@ -91,11 +194,17 @@ async def analyze_repo(owner: str, repo: str):
             "status": "success",
             "repo": {
                 "full_name": f"{owner}/{repo}",
-                "description": "LLM 分析服务暂时不可用",
-                "stargazers_count": 0,
-                "forks_count": 0,
-                "language": "未知"
+                "description": repo_details.get("description", "LLM 分析服务暂时不可用"),
+                "stargazers_count": repo_details.get("star_count", 0),
+                "forks_count": repo_details.get("fork_count", 0),
+                "language": repo_details["languages"][0]["language"] if repo_details["languages"] else "未知"
             },
+            "languages": repo_details["languages"],
+            "contributors": repo_details["contributors"],
+            "commits": repo_details["commits"],
+            "issues": repo_details["issues"],
+            "star_count": repo_details["star_count"],
+            "fork_count": repo_details["fork_count"],
             "analysis": {
                 "total_score": 5.0,
                 "scores": {

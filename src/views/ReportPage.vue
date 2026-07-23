@@ -23,6 +23,15 @@
         <span class="label">/ 10</span>
       </div>
 
+      <div class="grid">
+        <div class="card">
+          <RadarChart :scores="analysis.scores" />
+        </div>
+        <div class="card">
+          <TechStackChart :languages="report.languages" />
+        </div>
+      </div>
+
       <div class="card">
         <h3>评分详情</h3>
         <div v-for="(item, key) in analysis.scores" :key="key" class="score-item">
@@ -33,7 +42,15 @@
       </div>
 
       <div class="card">
-        <h3>总结建议</h3>
+        <CommunityProfile
+          :contributors="report.contributors"
+          :commits="report.commits"
+          :issues="report.issues"
+        />
+      </div>
+
+      <div class="card">
+        <h3>项目总结</h3>
         <p>{{ analysis.summary }}</p>
       </div>
     </template>
@@ -43,6 +60,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import RadarChart from '../components/RadarChart.vue'
+import TechStackChart from '../components/TechStackChart.vue'
+import CommunityProfile from '../components/CommunityProfile.vue'
 
 const route = useRoute()
 const owner = route.params.owner
@@ -69,10 +89,14 @@ onMounted(async () => {
     report.value = {
       repo: {
         full_name: data.repo_url?.replace('https://github.com/', '') || `${owner}/${repo}`,
-        description: data.summary || '',
-        stargazers_count: 0,
-        forks_count: 0
-      }
+        description: data.description || data.summary || '',
+        stargazers_count: data.star_count || 0,
+        forks_count: data.fork_count || 0
+      },
+      languages: data.languages || [],
+      contributors: data.contributors || {},
+      commits: data.commits || {},
+      issues: data.issues || {}
     }
     analysis.value = {
       total_score: data.total_score,
@@ -90,72 +114,316 @@ onMounted(async () => {
 
 <style scoped>
 .report-page {
-  max-width: 900px;
+  max-width: 960px;
   margin: 0 auto;
-  padding: 30px 20px;
+  padding: 40px 24px;
 }
+
+/* 页面进入动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
 .back-link {
-  display: inline-block;
-  margin-bottom: 20px;
-  color: #409eff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 32px;
+  color: var(--accent);
   text-decoration: none;
   font-size: 14px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  animation: fadeInDown 0.5s ease;
 }
-.back-link:hover { text-decoration: underline; }
+
+.back-link:hover {
+  background: var(--accent-bg);
+  transform: translateX(-4px);
+}
 
 .steps {
-  margin-bottom: 24px;
-  padding: 16px;
-  background: #f9fafb;
-  border-radius: 8px;
+  margin-bottom: 32px;
+  padding: 20px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
+  border: var(--glass-border);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  animation: fadeIn 0.6s ease;
 }
+
 .step {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 0;
+  gap: 12px;
+  padding: 8px 0;
   font-size: 14px;
-  color: #888;
-  transition: color 0.3s;
+  color: var(--text);
+  transition: all 0.3s ease;
+  animation: slideInLeft 0.5s ease backwards;
 }
-.step.active { color: #409eff; font-weight: 500; }
-.step.done { color: #67c23a; }
-.step.error { color: #f56c6c; }
-.step-icon { width: 16px; text-align: center; }
 
-h1 { font-size: 28px; margin: 0 0 8px; }
-.desc { color: #888; margin-bottom: 20px; }
+.step:nth-child(1) { animation-delay: 0.1s; }
+.step:nth-child(2) { animation-delay: 0.2s; }
+.step:nth-child(3) { animation-delay: 0.3s; }
+
+.step.active { color: var(--accent); font-weight: 500; }
+.step.done { color: var(--success); }
+.step.error { color: var(--danger); }
+
+.step-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--card-bg);
+  font-size: 12px;
+}
+
+.step.active .step-icon { background: var(--accent-bg); }
+.step.done .step-icon { background: rgba(16, 185, 129, 0.1); }
+.step.error .step-icon { background: rgba(239, 68, 68, 0.1); }
+
+h1 {
+  font-size: 32px;
+  margin: 0 0 12px;
+  line-height: 1.2;
+  animation: fadeIn 0.6s ease 0.1s backwards;
+}
+
+.desc {
+  color: var(--text);
+  margin-bottom: 24px;
+  font-size: 16px;
+  line-height: 1.6;
+  animation: fadeIn 0.6s ease 0.2s backwards;
+}
+
 .score-badge {
   display: inline-flex;
   align-items: baseline;
-  gap: 4px;
-  background: #f0f9ff;
-  padding: 8px 20px;
-  border-radius: 20px;
-  margin-bottom: 24px;
+  gap: 8px;
+  background: var(--accent-gradient);
+  padding: 12px 28px;
+  border-radius: 100px;
+  margin-bottom: 32px;
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.3);
+  animation: scaleIn 0.5s ease 0.3s backwards;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
-.score-badge .score { font-size: 32px; font-weight: bold; color: #409eff; }
-.score-badge .label { font-size: 14px; color: #888; }
+
+.score-badge:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 24px rgba(124, 58, 237, 0.4);
+}
+
+.score-badge .score {
+  font-size: 40px;
+  font-weight: 700;
+  color: white;
+}
+
+.score-badge .label {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
 .card {
-  border: 1px solid #eee;
-  border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 16px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
+  border: var(--glass-border);
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: var(--card-shadow);
+  transition: all 0.3s ease;
+  animation: fadeInUp 0.6s ease backwards;
 }
-.card h3 { margin: 0 0 16px; font-size: 18px; }
+
+.card:nth-child(1) { animation-delay: 0.4s; }
+.card:nth-child(2) { animation-delay: 0.5s; }
+
+.card:hover {
+  box-shadow: var(--card-shadow-hover);
+  transform: translateY(-4px);
+}
+
+.card h3 {
+  margin: 0 0 20px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-h);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card h3::before {
+  content: '';
+  width: 4px;
+  height: 20px;
+  background: var(--accent-gradient);
+  border-radius: 2px;
+}
+
 .score-item {
-  padding: 12px 0;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+  animation: fadeIn 0.4s ease backwards;
+  transition: background 0.2s ease;
 }
-.score-item:last-child { border-bottom: none; }
-.score-label { font-weight: 500; margin-right: 8px; }
-.score-value { color: #409eff; font-weight: bold; }
-.score-detail { color: #666; font-size: 14px; margin: 4px 0 0; }
-.error-box {
-  background: #fef0f0;
-  color: #f56c6c;
-  padding: 12px 16px;
+
+.score-item:hover {
+  background: var(--accent-bg);
+  margin: 0 -12px;
+  padding: 16px 12px;
   border-radius: 8px;
-  margin-bottom: 16px;
+}
+
+.score-item:nth-child(1) { animation-delay: 0.6s; }
+.score-item:nth-child(2) { animation-delay: 0.7s; }
+.score-item:nth-child(3) { animation-delay: 0.8s; }
+.score-item:nth-child(4) { animation-delay: 0.9s; }
+.score-item:nth-child(5) { animation-delay: 1.0s; }
+.score-item:nth-child(6) { animation-delay: 1.1s; }
+
+.score-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.score-item:first-child {
+  padding-top: 0;
+}
+
+.score-label {
+  font-weight: 600;
+  color: var(--text-h);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.score-value {
+  display: inline-block;
+  padding: 2px 10px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.score-detail {
+  color: var(--text);
+  font-size: 14px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.error-box {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+  padding: 16px 20px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+@media (max-width: 640px) {
+  .report-page {
+    padding: 24px 16px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  h1 {
+    font-size: 24px;
+  }
 }
 </style>
