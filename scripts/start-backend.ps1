@@ -8,7 +8,7 @@ Set-Location $PSScriptRoot\..
 # Check if server.py exists
 if (-not (Test-Path "server.py")) {
     Write-Error "server.py not found in $(Get-Location)"
-    Write-Host "Please run this script from the project root directory."
+    Write-Warning "Please run this script from the project root directory."
     exit 1
 }
 
@@ -26,7 +26,7 @@ if (Test-Path "venv\Scripts\Activate.ps1") {
 # Check if uvicorn is installed
 if (-not (Get-Command uvicorn -ErrorAction SilentlyContinue)) {
     Write-Error "uvicorn not found"
-    Write-Host "Please install dependencies: pip install -r requirements.txt"
+    Write-Warning "Please install dependencies: pip install -r requirements.txt"
     exit 1
 }
 
