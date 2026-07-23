@@ -260,55 +260,64 @@ async def stream_analysis(owner: str, repo: str):
             # 构建 prompt
             prompt = SYSTEM_PROMPT + "\n" + get_current_date() + "\n" + text_content
 
-            # 流式调用 LLM
-            import requests
+            # 流式调用 LLM（使用异步 httpx）
             from config import MODEL_PATH, HOST, PORT
 
             server_url = f"http://{HOST}:{PORT}/v1/chat/completions"
 
-            resp = requests.post(server_url, json={
-                "model": MODEL_PATH,
-                "messages": [
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": "请评估以上GitHub项目"},
-                ],
-                "temperature": 0.6,
-                "max_tokens": 8192,
-                "stream": True,
-                "reasoning_effort": "high",
-            }, stream=True)
+            async with httpx.AsyncClient(timeout=120) as client:
+                async with client.stream(
+                    "POST",
+                    server_url,
+                    json={
+                        "model": MODEL_PATH,
+                        "messages": [
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": "请评估以上GitHub项目"},
+                        ],
+                        "temperature": 0.6,
+                        "max_tokens": 8192,
+                        "stream": True,
+                        "reasoning_effort": "high",
+                    }
+                ) as resp:
+                    resp.raise_for_status()
 
-            resp.raise_for_status()
+                    thinking = True
+                    answer_parts = []
+                    buffer = ""
 
-            thinking = True
-            answer_parts = []
+                    async for line in resp.aiter_lines():
+                        if not line:
+                            continue
 
-            for line in resp.iter_lines():
-                if not line:
-                    continue
-                line = line.decode("utf-8")
-                if not line.startswith("data: "):
-                    continue
-                data = line[6:]
-                if data == "[DONE]":
-                    break
+                        buffer += line
+                        if not buffer.startswith("data: "):
+                            buffer = ""
+                            continue
 
-                try:
-                    chunk = json.loads(data)
-                    delta = chunk["choices"][0]["delta"]
+                        data = buffer[6:]
+                        buffer = ""
 
-                    # 流式输出思考过程
-                    if "reasoning_content" in delta and delta["reasoning_content"]:
-                        yield f"data: {json.dumps({'type': 'thinking', 'content': delta['reasoning_content']})}\n\n"
+                        if data == "[DONE]":
+                            break
 
-                    # 收集正式回复内容
-                    if "content" in delta and delta["content"]:
-                        if thinking:
-                            thinking = False
-                        answer_parts.append(delta["content"])
-                        yield f"data: {json.dumps({'type': 'answer', 'content': delta['content']})}\n\n"
-                except json.JSONDecodeError:
-                    continue
+                        try:
+                            chunk = json.loads(data)
+                            delta = chunk["choices"][0]["delta"]
+
+                            # 流式输出思考过程
+                            if "reasoning_content" in delta and delta["reasoning_content"]:
+                                yield f"data: {json.dumps({'type': 'thinking', 'content': delta['reasoning_content']})}\n\n"
+
+                            # 收集正式回复内容
+                            if "content" in delta and delta["content"]:
+                                if thinking:
+                                    thinking = False
+                                answer_parts.append(delta["content"])
+                                yield f"data: {json.dumps({'type': 'answer', 'content': delta['content']})}\n\n"
+                        except json.JSONDecodeError:
+                            continue
 
             # 发送完成事件
             final_answer = "".join(answer_parts)
