@@ -90,99 +90,111 @@ const thinkingContent = ref('')
 const isThinking = ref(false)
 
 let eventSource = null
+let abortController = null
+
+const NGROK_HEADERS = { 'ngrok-skip-browser-warning': 'true' }
 
 onMounted(async () => {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
+  const isNgrok = apiBaseUrl.includes('ngrok')
 
   steps.value.push({ step: 'loading', message: '正在分析仓库...', status: 'active' })
 
   try {
-    // 使用流式端点
-    eventSource = new EventSource(`${apiBaseUrl}/api/stream/${owner}/${repo}`)
+    // 使用流式端点（fetch 替代 EventSource，支持自定义 header）
+    abortController = new AbortController()
 
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data)
+    const resp = await fetch(`${apiBaseUrl}/api/stream/${owner}/${repo}`, {
+      headers: isNgrok ? NGROK_HEADERS : {},
+      signal: abortController.signal,
+    })
 
-      switch (data.type) {
-        case 'start':
-          steps.value = [{ step: 'start', message: data.message, status: 'active' }]
-          break
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
 
-        case 'step':
-          const existingStep = steps.value.find(s => s.step === 'loading')
-          if (existingStep) {
-            existingStep.message = data.message
-          } else {
-            steps.value.push({ step: 'loading', message: data.message, status: 'active' })
+    const reader = resp.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const data = JSON.parse(line.slice(6))
+
+        switch (data.type) {
+          case 'start':
+            steps.value = [{ step: 'start', message: data.message, status: 'active' }]
+            break
+
+          case 'step':
+            const existingStep = steps.value.find(s => s.step === 'loading')
+            if (existingStep) {
+              existingStep.message = data.message
+            } else {
+              steps.value.push({ step: 'loading', message: data.message, status: 'active' })
+            }
+            break
+
+          case 'thinking':
+            isThinking.value = true
+            thinkingContent.value += data.content
+            break
+
+          case 'answer':
+            isThinking.value = false
+            break
+
+          case 'done': {
+            const result = data.result
+            report.value = {
+              repo: {
+                full_name: result.repo_url?.replace('https://github.com/', '') || `${owner}/${repo}`,
+                description: result.description || result.summary || '',
+                stargazers_count: result.star_count || 0,
+                forks_count: result.fork_count || 0
+              },
+              languages: result.languages || [],
+              contributors: result.contributors || {},
+              commits: result.commits || {},
+              issues: result.issues || {}
+            }
+            analysis.value = {
+              total_score: result.total_score,
+              scores: result.scores,
+              summary: result.summary
+            }
+            steps.value = [{ step: 'done', message: '分析完成', status: 'done' }]
+            return
           }
-          break
 
-        case 'thinking':
-          isThinking.value = true
-          thinkingContent.value += data.content
-          break
-
-        case 'answer':
-          isThinking.value = false
-          break
-
-        case 'done':
-          eventSource.close()
-          eventSource = null
-
-          const result = data.result
-          report.value = {
-            repo: {
-              full_name: result.repo_url?.replace('https://github.com/', '') || `${owner}/${repo}`,
-              description: result.description || result.summary || '',
-              stargazers_count: result.star_count || 0,
-              forks_count: result.fork_count || 0
-            },
-            languages: result.languages || [],
-            contributors: result.contributors || {},
-            commits: result.commits || {},
-            issues: result.issues || {}
-          }
-          analysis.value = {
-            total_score: result.total_score,
-            scores: result.scores,
-            summary: result.summary
-          }
-
-          steps.value = [{ step: 'done', message: '分析完成', status: 'done' }]
-          break
-
-        case 'error':
-          eventSource.close()
-          eventSource = null
-          throw new Error(data.message)
+          case 'error':
+            throw new Error(data.message)
+        }
       }
     }
-
-    eventSource.onerror = (error) => {
-      console.error('EventSource error:', error)
-      if (eventSource) {
-        eventSource.close()
-        eventSource = null
-      }
-      // 如果流式端点失败，回退到普通端点
-      fallbackToNormalApi()
-    }
-
   } catch (error) {
+    if (error.name === 'AbortError') return
     console.error('Stream error:', error)
-    // 如果流式端点失败，回退到普通端点
     fallbackToNormalApi()
   }
 })
 
 async function fallbackToNormalApi() {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
+  const isNgrok = apiBaseUrl.includes('ngrok')
 
   try {
     steps.value = [{ step: 'loading', message: '正在分析仓库...', status: 'active' }]
 
-    const response = await fetch(`${apiBaseUrl}/api/analyze/${owner}/${repo}`)
+    const response = await fetch(`${apiBaseUrl}/api/analyze/${owner}/${repo}`, {
+      headers: isNgrok ? NGROK_HEADERS : {},
+    })
     const data = await response.json()
 
     if (!response.ok) {
@@ -215,8 +227,8 @@ async function fallbackToNormalApi() {
 }
 
 onUnmounted(() => {
-  if (eventSource) {
-    eventSource.close()
+  if (abortController) {
+    abortController.abort()
   }
 })
 </script>
