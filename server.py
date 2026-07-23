@@ -1,10 +1,11 @@
-"""FastAPI HTTP 服务器 — 对接前端的 API 接口"""
+"""FastAPI HTTP 服务器 — 对接前端与 LLM (本地/GPU服务器运行版)"""
 
 import sys
 import os
 import re
 import json
 import asyncio
+from datetime import datetime
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -21,19 +22,21 @@ VERIFY_SSL = os.getenv("VERIFY_SSL", "false").lower() != "false"
 # GitHub Token（可选，提高 API 速率限制）
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
+# GPU 服务器 LLM 接口地址（优先从环境变量读取）
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://raving-tubeless-greeting.ngrok-free.dev")
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 from analyzer import analyze_github_project
 
 app = FastAPI(title="GitHub 项目体检 API", version="1.0.0")
 
-# CORS 配置 - 确保跨域请求正常
+# 允许跨域（包含 ngrok 和 Railway 域名）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
 
 _GITHUB_API = "https://api.github.com"
@@ -69,9 +72,9 @@ async def fetch_github_repo_info(owner: str, repo: str) -> str:
             except httpx.RequestError:
                 pass
 
-    issues_count = data.get("open_issues_count", 0)
+        issues_count = data.get("open_issues_count", 0)
 
-    text = f"""项目名称: {data.get("full_name", f"{owner}/{repo}")}
+        text = f"""项目名称: {data.get("full_name", f"{owner}/{repo}")}
 GitHub地址: https://github.com/{owner}/{repo}
 Star数: {data.get("stargazers_count", 0)}
 Fork数: {data.get("forks_count", 0)}
@@ -82,7 +85,7 @@ Fork数: {data.get("forks_count", 0)}
 最近Issue数量: {issues_count}
 """
 
-    return text
+        return text
 
 
 async def fetch_github_repo_details(owner: str, repo: str) -> dict:
@@ -168,14 +171,11 @@ async def fetch_github_repo_details(owner: str, repo: str) -> dict:
 
 @app.get("/api/analyze/{owner}/{repo}")
 async def analyze_repo(owner: str, repo: str):
-    """分析 GitHub 仓库，返回评分结果"""
+    """同步分析 GitHub 仓库"""
     if not _REPO_RE.match(f"{owner}/{repo}"):
         raise HTTPException(status_code=400, detail="仓库路径格式无效")
 
-    # 获取详细数据用于前端展示
     repo_details = await fetch_github_repo_details(owner, repo)
-
-    # 获取文本数据用于 LLM 分析
     text_content = await fetch_github_repo_info(owner, repo)
 
     try:
@@ -183,7 +183,6 @@ async def analyze_repo(owner: str, repo: str):
         if result.get("status") == "error":
             raise HTTPException(status_code=500, detail=result.get("message", "分析失败"))
 
-        # 合并 LLM 分析结果和 GitHub 详细数据
         result["languages"] = repo_details["languages"]
         result["contributors"] = repo_details["contributors"]
         result["commits"] = repo_details["commits"]
@@ -194,7 +193,6 @@ async def analyze_repo(owner: str, repo: str):
         result["license"] = repo_details["license"]
         return result
     except Exception as e:
-        # LLM 服务不可用时，返回基本数据
         return {
             "status": "success",
             "repo": {
@@ -213,14 +211,10 @@ async def analyze_repo(owner: str, repo: str):
             "analysis": {
                 "total_score": 5.0,
                 "scores": {
-                    "活跃度": 5.0,
-                    "社区响应": 5.0,
-                    "文档质量": 5.0,
-                    "代码规模": 5.0,
-                    "稳定性": 5.0,
-                    "影响力": 5.0
+                    "活跃度": 5.0, "社区响应": 5.0, "文档质量": 5.0,
+                    "代码规模": 5.0, "稳定性": 5.0, "影响力": 5.0
                 },
-                "summary": "LLM 分析服务暂时不可用，请稍后再试。当前显示的是基础数据。",
+                "summary": "LLM 分析服务暂时不可用，请稍后再试。",
                 "suggestions": ["等待 LLM 服务恢复后重新分析"]
             }
         }
@@ -231,10 +225,9 @@ async def health():
     return {"status": "ok", "service": "GitHub 项目体检 API", "version": "1.0.0"}
 
 
-# ========== 流式输出端点（独立端口） ==========
+# ========== 流式输出端点 ==========
 
-from llama_chat import stream_chat, SYSTEM_PROMPT
-from datetime import datetime
+from llama_chat import SYSTEM_PROMPT
 
 
 def get_current_date() -> str:
@@ -247,30 +240,32 @@ async def stream_analysis(owner: str, repo: str):
 
     async def event_generator(owner: str, repo: str):
         try:
-            # 发送开始事件
             yield f"data: {json.dumps({'type': 'start', 'message': '开始分析...'})}\n\n"
-
-            # 获取仓库信息
             yield f"data: {json.dumps({'type': 'step', 'message': '正在获取 GitHub 仓库数据...'})}\n\n"
 
-            # 并发获取文本数据和详细数据
             text_content = await fetch_github_repo_info(owner, repo)
             repo_details = await fetch_github_repo_details(owner, repo)
 
             yield f"data: {json.dumps({'type': 'step', 'message': '数据获取完成，开始 LLM 分析...'})}\n\n"
 
-            # 构建 prompt
             prompt = SYSTEM_PROMPT + "\n" + get_current_date() + "\n" + text_content
 
-            # 流式调用 LLM（使用异步 httpx）
-            from config import MODEL_PATH, HOST, PORT
+            from config import MODEL_PATH
 
-            server_url = f"http://{HOST}:{PORT}/v1/chat/completions"
+            # 拼接正确的 GPU 服务器接口地址
+            server_url = f"{LLM_BASE_URL.rstrip('/')}/v1/chat/completions"
 
-            async with httpx.AsyncClient(timeout=120) as client:
+            # 准备请求头（包含绕过 ngrok 警告的 Header）
+            llm_headers = {
+                "ngrok-skip-browser-warning": "69420",
+                "Content-Type": "application/json"
+            }
+
+            async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
                 async with client.stream(
                     "POST",
                     server_url,
+                    headers=llm_headers,
                     json={
                         "model": MODEL_PATH,
                         "messages": [
@@ -287,33 +282,36 @@ async def stream_analysis(owner: str, repo: str):
 
                     thinking = True
                     answer_parts = []
-                    buffer = ""
+                    last_ping_time = asyncio.get_event_loop().time()
 
-                    async for line in resp.aiter_lines():
-                        if not line:
+                    async for raw_line in resp.aiter_lines():
+                        # --- SSE 心跳机制：每 5 秒自动发送一次，防止网络超时切断 ---
+                        current_time = asyncio.get_event_loop().time()
+                        if current_time - last_ping_time > 5.0:
+                            yield ": ping\n\n"
+                            last_ping_time = current_time
+
+                        line = raw_line.strip()
+                        if not line or not line.startswith("data: "):
                             continue
 
-                        buffer += line
-                        if not buffer.startswith("data: "):
-                            buffer = ""
-                            continue
-
-                        data = buffer[6:]
-                        buffer = ""
-
+                        data = line[6:].strip()
                         if data == "[DONE]":
                             break
 
                         try:
                             chunk = json.loads(data)
-                            delta = chunk["choices"][0]["delta"]
+                            if not chunk.get("choices"):
+                                continue
 
-                            # 流式输出思考过程
-                            if "reasoning_content" in delta and delta["reasoning_content"]:
+                            delta = chunk["choices"][0].get("delta", {})
+
+                            # 1. 思考过程
+                            if delta.get("reasoning_content"):
                                 yield f"data: {json.dumps({'type': 'thinking', 'content': delta['reasoning_content']})}\n\n"
 
-                            # 收集正式回复内容
-                            if "content" in delta and delta["content"]:
+                            # 2. 正式回复内容
+                            if delta.get("content"):
                                 if thinking:
                                     thinking = False
                                 answer_parts.append(delta["content"])
@@ -321,27 +319,23 @@ async def stream_analysis(owner: str, repo: str):
                         except json.JSONDecodeError:
                             continue
 
-            # 发送完成事件
+            # 最终结果解析
             final_answer = "".join(answer_parts)
-
-            # 尝试解析 JSON 结果
             try:
-                # 清理可能的 markdown 代码块
                 cleaned = final_answer
                 if "```json" in cleaned:
                     start = cleaned.find("```json") + 7
-                    end = cleaned.find("```", start)
-                    if end != -1:
+                    end = cleaned.rfind("```")
+                    if end != -1 and end > start:
                         cleaned = cleaned[start:end].strip()
                 elif "```" in cleaned:
                     start = cleaned.find("```") + 3
-                    end = cleaned.find("```", start)
-                    if end != -1:
+                    end = cleaned.rfind("```")
+                    if end != -1 and end > start:
                         cleaned = cleaned[start:end].strip()
 
                 result = json.loads(cleaned)
 
-                # 合并 LLM 分析结果和 GitHub 详细数据
                 result["languages"] = repo_details["languages"]
                 result["contributors"] = repo_details["contributors"]
                 result["commits"] = repo_details["commits"]
@@ -352,8 +346,20 @@ async def stream_analysis(owner: str, repo: str):
                 result["license"] = repo_details["license"]
 
                 yield f"data: {json.dumps({'type': 'done', 'result': result})}\n\n"
-            except json.JSONDecodeError:
-                yield f"data: {json.dumps({'type': 'error', 'message': 'LLM 返回格式错误'})}\n\n"
+            except Exception:
+                # 容错保底：解析失败时尽量返回基础数据
+                fallback_result = {
+                    "raw_answer": final_answer,
+                    "languages": repo_details["languages"],
+                    "contributors": repo_details["contributors"],
+                    "commits": repo_details["commits"],
+                    "issues": repo_details["issues"],
+                    "star_count": repo_details["star_count"],
+                    "fork_count": repo_details["fork_count"],
+                    "description": repo_details["description"],
+                    "license": repo_details["license"],
+                }
+                yield f"data: {json.dumps({'type': 'done', 'result': fallback_result})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
@@ -366,12 +372,10 @@ async def stream_analysis(owner: str, repo: str):
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Credentials": "true",
         }
     )
 
 
 @app.get("/api/stream/health")
 async def stream_health():
-    """流式端点健康检查"""
     return {"status": "ok", "endpoint": "stream", "version": "1.0.0"}
