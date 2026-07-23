@@ -4,9 +4,9 @@ from datetime import datetime
 import requests
 import sys
 import json
-from config import MODEL_PATH, HOST, PORT
+from config import MODEL_PATH, LLAMA_SERVER_URL
 
-SERVER_URL = f"http://{HOST}:{PORT}/v1/chat/completions"
+SERVER_URL = LLAMA_SERVER_URL
 
 SYSTEM_PROMPT = """你是一个GitHub项目评估专家。请根据输入的GitHub项目数据，从以下6个维度进行评分分析，每个维度满分10分。
 

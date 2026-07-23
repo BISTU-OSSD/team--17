@@ -263,9 +263,9 @@ async def stream_analysis(owner: str, repo: str):
             prompt = SYSTEM_PROMPT + "\n" + get_current_date() + "\n" + text_content
 
             # 流式调用 LLM（使用异步 httpx）
-            from config import MODEL_PATH, HOST, PORT
+            from config import LLAMA_SERVER_URL
 
-            server_url = f"http://{HOST}:{PORT}/v1/chat/completions"
+            server_url = LLAMA_SERVER_URL
 
             async with httpx.AsyncClient(timeout=120) as client:
                 async with client.stream(

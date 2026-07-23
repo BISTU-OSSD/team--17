@@ -10,6 +10,7 @@ LLAMA_SERVER = os.getenv("LLAMA_SERVER") or os.path.join(ROOT_DIR, "llama-cpp", 
 MODEL_PATH = os.getenv("MODEL_PATH") or os.path.join(ROOT_DIR, "llama-cpp", "Qwen3.5-9B-Q4_K_M.gguf")
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8080"))
+LLAMA_SERVER_URL = os.getenv("LLAMA_SERVER_URL", f"http://{HOST}:{PORT}/v1/chat/completions")
 
 def check_environment():
     """检查运行环境"""
