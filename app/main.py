@@ -371,7 +371,12 @@ async def stream_analysis(owner: str, repo: str):
             except _json.JSONDecodeError:
                 result = {"summary": raw_answer, "scores": {}}
 
-            # 合并 GitHub 数据
+            # 计算总分
+            scores = result.get("scores", {})
+            score_values = [v.get("score", 0) for v in scores.values() if isinstance(v, dict)]
+            result["total_score"] = round(sum(score_values) / len(score_values), 1) if score_values else 0.0
+
+            # 合并 GitHub 数据（平铺到顶层，匹配前端期望的格式）
             result["languages"] = report_dict.get("languages", [])
             result["contributors"] = report_dict.get("contributors", {})
             result["commits"] = report_dict.get("commits", {})
