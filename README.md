@@ -131,6 +131,19 @@ npm run dev
 
 ---
 
+## 🚀 本地后端部署 (Local Backend Deployment)
+
+如需使用本地电脑作为后端服务器（适用于需要本地 GPU 运行 LLM 的场景）：
+
+1. 启动后端服务：`.\scripts\start-backend.ps1`
+2. 启动 ngrok 隧道：`.\scripts\start-ngrok.ps1`
+3. 更新 `.env.production` 中的 `VITE_API_BASE_URL` 为 ngrok URL
+4. 启动前端：`npm run dev`
+
+详见 [DEPLOYMENT.md](DEPLOYMENT.md)
+
+---
+
 ## 👥 团队分工 (Team)
 
 | 姓名 / 角色 | 负责模块与职责 |
