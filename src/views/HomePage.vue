@@ -23,17 +23,30 @@ const error = ref('')
 
 const analyze = () => {
   error.value = ''
-  const val = repoName.value.trim()
+  let val = repoName.value.trim()
   if (!val) {
     error.value = '请输入仓库路径'
     return
   }
-  const arr = val.split('/')
-  if (arr.length !== 2 || !arr[0] || !arr[1]) {
-    error.value = '格式错误，请输入 owner/repo 格式'
+
+  // 支持多种输入格式
+  // https://github.com/owner/repo
+  // github.com/owner/repo
+  // owner/repo
+  let match = val.match(/github\.com\/([^/]+)\/([^/]+)/)
+  if (match) {
+    router.push(`/report/${match[1]}/${match[2]}`)
     return
   }
-  router.push(`/report/${arr[0]}/${arr[1]}`)
+
+  // owner/repo 格式
+  const arr = val.split('/')
+  if (arr.length === 2 && arr[0] && arr[1]) {
+    router.push(`/report/${arr[0]}/${arr[1]}`)
+    return
+  }
+
+  error.value = '格式错误，请输入 owner/repo 或完整 GitHub URL'
 }
 </script>
 
