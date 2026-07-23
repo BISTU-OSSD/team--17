@@ -19,6 +19,8 @@ if (Test-Path "venv\Scripts\Activate.ps1") {
 } elseif (Test-Path ".venv\Scripts\Activate.ps1") {
     Write-Host "Activating virtual environment..."
     & ".venv\Scripts\Activate.ps1"
+} else {
+    Write-Warning "No virtual environment found. Using system Python."
 }
 
 # Check if uvicorn is installed
