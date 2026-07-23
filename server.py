@@ -3,6 +3,8 @@
 import sys
 import os
 import re
+import json
+import asyncio
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -11,6 +13,7 @@ import certifi
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 # SSL 验证：Windows 环境默认关闭
 VERIFY_SSL = os.getenv("VERIFY_SSL", "false").lower() != "false"
@@ -224,3 +227,125 @@ async def analyze_repo(owner: str, repo: str):
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "service": "GitHub 项目体检 API", "version": "1.0.0"}
+
+
+# ========== 流式输出端点（独立端口） ==========
+
+from llama_chat import stream_chat, SYSTEM_PROMPT
+from datetime import datetime
+
+
+def get_current_date() -> str:
+    return "today is " + datetime.now().strftime("%Y/%m/%d")
+
+
+@app.get("/api/stream/{owner}/{repo}")
+async def stream_analysis(owner: str, repo: str):
+    """流式分析 GitHub 仓库，实时返回 LLM 思考过程"""
+
+    async def event_generator():
+        try:
+            # 发送开始事件
+            yield f"data: {json.dumps({'type': 'start', 'message': '开始分析...'})}\n\n"
+
+            # 获取仓库信息
+            yield f"data: {json.dumps({'type': 'step', 'message': '正在获取 GitHub 仓库数据...'})}\n\n"
+
+            text_content = await fetch_github_repo_info(owner, repo)
+
+            yield f"data: {json.dumps({'type': 'step', 'message': '数据获取完成，开始 LLM 分析...'})}\n\n"
+
+            # 构建 prompt
+            prompt = SYSTEM_PROMPT + "\n" + get_current_date() + "\n" + text_content
+
+            # 流式调用 LLM
+            import requests
+            from config import MODEL_PATH, HOST, PORT
+
+            server_url = f"http://{HOST}:{PORT}/v1/chat/completions"
+
+            resp = requests.post(server_url, json={
+                "model": MODEL_PATH,
+                "messages": [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": "请评估以上GitHub项目"},
+                ],
+                "temperature": 0.6,
+                "max_tokens": 8192,
+                "stream": True,
+                "reasoning_effort": "high",
+            }, stream=True)
+
+            resp.raise_for_status()
+
+            thinking = True
+            answer_parts = []
+
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                line = line.decode("utf-8")
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:]
+                if data == "[DONE]":
+                    break
+
+                try:
+                    chunk = json.loads(data)
+                    delta = chunk["choices"][0]["delta"]
+
+                    # 流式输出思考过程
+                    if "reasoning_content" in delta and delta["reasoning_content"]:
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': delta['reasoning_content']})}\n\n"
+
+                    # 收集正式回复内容
+                    if "content" in delta and delta["content"]:
+                        if thinking:
+                            thinking = False
+                        answer_parts.append(delta["content"])
+                        yield f"data: {json.dumps({'type': 'answer', 'content': delta['content']})}\n\n"
+                except json.JSONDecodeError:
+                    continue
+
+            # 发送完成事件
+            final_answer = "".join(answer_parts)
+
+            # 尝试解析 JSON 结果
+            try:
+                # 清理可能的 markdown 代码块
+                cleaned = final_answer
+                if "```json" in cleaned:
+                    start = cleaned.find("```json") + 7
+                    end = cleaned.find("```", start)
+                    if end != -1:
+                        cleaned = cleaned[start:end].strip()
+                elif "```" in cleaned:
+                    start = cleaned.find("```") + 3
+                    end = cleaned.find("```", start)
+                    if end != -1:
+                        cleaned = cleaned[start:end].strip()
+
+                result = json.loads(cleaned)
+                yield f"data: {json.dumps({'type': 'done', 'result': result})}\n\n"
+            except json.JSONDecodeError:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'LLM 返回格式错误'})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@app.get("/api/stream/health")
+async def stream_health():
+    """流式端点健康检查"""
+    return {"status": "ok", "endpoint": "stream", "version": "1.0.0"}
