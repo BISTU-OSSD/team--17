@@ -231,27 +231,6 @@ async def health():
     return {"status": "ok", "service": "GitHub 项目体检 API", "version": "1.0.0"}
 
 
-# ========== CORS 预检请求处理 ==========
-
-from fastapi import Request
-from fastapi.responses import Response
-
-
-@app.options("/{path:path}")
-async def options_handler(path: str, request: Request):
-    """处理所有 OPTIONS 预检请求"""
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "*",
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Max-Age": "86400",
-        }
-    )
-
-
 # ========== 流式输出端点（独立端口） ==========
 
 from llama_chat import stream_chat, SYSTEM_PROMPT
