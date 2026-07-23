@@ -74,7 +74,8 @@ const analysis = ref(null)
 let evtSource = null
 
 onMounted(() => {
-  evtSource = new EventSource(`/api/analyze/${owner}/${repo}`)
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
+  evtSource = new EventSource(`${apiBaseUrl}/api/analyze/${owner}/${repo}`)
 
   evtSource.addEventListener('step', (e) => {
     const data = JSON.parse(e.data)
