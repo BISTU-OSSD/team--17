@@ -313,7 +313,6 @@ async def stream_analysis(owner: str, repo: str):
             prompt = SYSTEM_PROMPT + "\ntoday is " + datetime.now().strftime("%Y/%m/%d") + "\n" + text_content
 
             answer_parts = []
-            llm_ok = False
             try:
                 async with _httpx.AsyncClient(timeout=120) as llm_client:
                     async with llm_client.stream(
@@ -334,25 +333,27 @@ async def stream_analysis(owner: str, repo: str):
                         llm_resp.raise_for_status()
                         buffer = ""
                         async for line in llm_resp.aiter_lines():
-                        if not line:
-                            continue
-                        buffer += line
-                        if not buffer.startswith("data: "):
+                            if not line:
+                                continue
+                            buffer += line
+                            if not buffer.startswith("data: "):
+                                buffer = ""
+                                continue
+                            data_str = buffer[6:]
                             buffer = ""
-                            continue
-                        data_str = buffer[6:]
-                        buffer = ""
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            chunk = _json.loads(data_str)
-                            delta = chunk["choices"][0]["delta"]
-                            if "reasoning_content" in delta and delta["reasoning_content"]:
-                                yield f"data: {_json.dumps({'type': 'thinking', 'content': delta['reasoning_content']})}\n\n"
-                            if "content" in delta and delta["content"]:
-                                answer_parts.append(delta["content"])
-                        except (_json.JSONDecodeError, KeyError, IndexError):
-                            continue
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                chunk = _json.loads(data_str)
+                                delta = chunk["choices"][0]["delta"]
+                                if "reasoning_content" in delta and delta["reasoning_content"]:
+                                    yield f"data: {_json.dumps({'type': 'thinking', 'content': delta['reasoning_content']})}\n\n"
+                                if "content" in delta and delta["content"]:
+                                    answer_parts.append(delta["content"])
+                            except (_json.JSONDecodeError, KeyError, IndexError):
+                                continue
+            except Exception as llm_err:
+                print(f"[stream] LLM 不可用: {llm_err}")
 
             # 解析最终结果
             raw_answer = "".join(answer_parts)
@@ -373,10 +374,6 @@ async def stream_analysis(owner: str, repo: str):
             except _json.JSONDecodeError:
                 result = {"summary": raw_answer, "scores": {}}
 
-            # 调试：打印 LLM 返回的 keys
-            print(f"[stream] LLM result keys: {list(result.keys())}")
-            print(f"[stream] scores type: {type(result.get('scores'))}, sample: {str(result.get('scores', {}))[:200]}")
-
             # 计算总分
             scores = result.get("scores", {})
             score_values = [v.get("score", 0) for v in scores.values() if isinstance(v, dict)]
@@ -394,10 +391,6 @@ async def stream_analysis(owner: str, repo: str):
             result["description"] = repo_info.get("description", "")
             result["license"] = repo_info.get("license", "未知")
             result["repo_url"] = f"https://github.com/{full_name}"
-
-            print(f"[stream] Final result keys: {list(result.keys())}")
-            print(f"[stream] total_score: {result.get('total_score')}")
-            print(f"[stream] scores keys: {list(result.get('scores', {}).keys())}")
 
             yield f"data: {_json.dumps({'type': 'done', 'result': result})}\n\n"
 
