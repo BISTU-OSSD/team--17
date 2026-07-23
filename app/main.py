@@ -371,6 +371,10 @@ async def stream_analysis(owner: str, repo: str):
             except _json.JSONDecodeError:
                 result = {"summary": raw_answer, "scores": {}}
 
+            # 调试：打印 LLM 返回的 keys
+            print(f"[stream] LLM result keys: {list(result.keys())}")
+            print(f"[stream] scores type: {type(result.get('scores'))}, sample: {str(result.get('scores', {}))[:200]}")
+
             # 计算总分
             scores = result.get("scores", {})
             score_values = [v.get("score", 0) for v in scores.values() if isinstance(v, dict)]
@@ -386,6 +390,10 @@ async def stream_analysis(owner: str, repo: str):
             result["description"] = report_dict.get("description", "")
             result["license"] = report_dict.get("license", "未知")
             result["repo_url"] = f"https://github.com/{full_name}"
+
+            print(f"[stream] Final result keys: {list(result.keys())}")
+            print(f"[stream] total_score: {result.get('total_score')}")
+            print(f"[stream] scores keys: {list(result.get('scores', {}).keys())}")
 
             yield f"data: {_json.dumps({'type': 'done', 'result': result})}\n\n"
 
