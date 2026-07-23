@@ -13,8 +13,7 @@ tests/
 __pycache__/
 *.pyc
 .env
-.env.*
-!env.production
+!.env.production
 scripts/
 docs/
 examples/
