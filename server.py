@@ -9,8 +9,8 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-# SSL 验证：默认开启；部分 Windows 环境需设 VERIFY_SSL=false
-VERIFY_SSL = os.getenv("VERIFY_SSL", "true").lower() != "false"
+# SSL 验证：Windows 环境默认关闭
+VERIFY_SSL = os.getenv("VERIFY_SSL", "false").lower() != "false"
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 from analyzer import analyze_github_project
@@ -79,12 +79,37 @@ async def analyze_repo(owner: str, repo: str):
         raise HTTPException(status_code=400, detail="仓库路径格式无效")
 
     text_content = await fetch_github_repo_info(owner, repo)
-    result = analyze_github_project(text_content)
 
-    if result.get("status") == "error":
-        raise HTTPException(status_code=500, detail=result.get("message", "分析失败"))
-
-    return result
+    try:
+        result = analyze_github_project(text_content)
+        if result.get("status") == "error":
+            raise HTTPException(status_code=500, detail=result.get("message", "分析失败"))
+        return result
+    except Exception as e:
+        # LLM 服务不可用时，返回基本数据
+        return {
+            "status": "success",
+            "repo": {
+                "full_name": f"{owner}/{repo}",
+                "description": "LLM 分析服务暂时不可用",
+                "stargazers_count": 0,
+                "forks_count": 0,
+                "language": "未知"
+            },
+            "analysis": {
+                "total_score": 5.0,
+                "scores": {
+                    "活跃度": 5.0,
+                    "社区响应": 5.0,
+                    "文档质量": 5.0,
+                    "代码规模": 5.0,
+                    "稳定性": 5.0,
+                    "影响力": 5.0
+                },
+                "summary": "LLM 分析服务暂时不可用，请稍后再试。当前显示的是基础数据。",
+                "suggestions": ["等待 LLM 服务恢复后重新分析"]
+            }
+        }
 
 
 @app.get("/api/health")

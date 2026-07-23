@@ -11,7 +11,7 @@
     </div>
 
     <!-- 错误 -->
-    <ErrorState v-if="errorMsg" :message="errorMsg" />
+    <div v-if="errorMsg" class="error-box">{{ errorMsg }}</div>
 
     <!-- 最终结果 -->
     <template v-if="report && analysis">
@@ -23,44 +23,26 @@
         <span class="label">/ 10</span>
       </div>
 
-      <div class="grid">
-        <div class="card">
-          <RepoBasicInfo :repo="report.repo" />
-        </div>
-        <div class="card">
-          <TechStackChart :languages="report.languages.languages" />
+      <div class="card">
+        <h3>评分详情</h3>
+        <div v-for="(item, key) in analysis.scores" :key="key" class="score-item">
+          <span class="score-label">{{ key }}</span>
+          <span class="score-value">{{ item.score }}/10</span>
+          <p class="score-detail">{{ item.detail }}</p>
         </div>
       </div>
 
       <div class="card">
-        <RadarChart :scores="analysis.scores" />
-      </div>
-
-      <div class="grid">
-        <div class="card">
-          <CommunityProfile
-            :contributors="report.contributors"
-            :commits="report.commits"
-            :issues="report.issues"
-          />
-        </div>
-        <div class="card">
-          <RepoRecommendations :summary="analysis.summary" />
-        </div>
+        <h3>总结建议</h3>
+        <p>{{ analysis.summary }}</p>
       </div>
     </template>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import RepoBasicInfo from '../components/RepoBasicInfo.vue'
-import TechStackChart from '../components/TechStackChart.vue'
-import RadarChart from '../components/RadarChart.vue'
-import CommunityProfile from '../components/CommunityProfile.vue'
-import RepoRecommendations from '../components/RepoRecommendations.vue'
-import ErrorState from '../components/ErrorState.vue'
 
 const route = useRoute()
 const owner = route.params.owner
@@ -71,63 +53,38 @@ const errorMsg = ref('')
 const report = ref(null)
 const analysis = ref(null)
 
-let evtSource = null
-
-onMounted(() => {
+onMounted(async () => {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
-  evtSource = new EventSource(`${apiBaseUrl}/api/analyze/${owner}/${repo}`)
 
-  evtSource.addEventListener('step', (e) => {
-    const data = JSON.parse(e.data)
-    const existing = steps.value.find(s => s.step === data.step)
-    if (existing) {
-      existing.message = data.message
-      existing.status = data.step === 'done' ? 'done' : 'active'
-    } else {
-      steps.value.push({
-        step: data.step,
-        message: data.message,
-        status: data.step === 'done' ? 'done' : 'active',
-      })
+  steps.value.push({ step: 'loading', message: '正在分析仓库...', status: 'active' })
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/analyze/${owner}/${repo}`)
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.detail || '分析失败')
     }
-    // 标记之前的步骤为完成
-    if (data.step !== 'validating') {
-      const idx = steps.value.findIndex(s => s.step === data.step)
-      for (let i = 0; i < idx; i++) {
-        if (steps.value[i].status !== 'done' && steps.value[i].status !== 'error') {
-          steps.value[i].status = 'done'
-        }
+
+    report.value = {
+      repo: {
+        full_name: data.repo_url?.replace('https://github.com/', '') || `${owner}/${repo}`,
+        description: data.summary || '',
+        stargazers_count: 0,
+        forks_count: 0
       }
     }
-  })
-
-  evtSource.addEventListener('result', (e) => {
-    const data = JSON.parse(e.data)
-    report.value = data.report
-    analysis.value = data.analysis
-    evtSource.close()
-  })
-
-  evtSource.addEventListener('error', (e) => {
-    if (e.data) {
-      const data = JSON.parse(e.data)
-      errorMsg.value = data.message
-    } else {
-      errorMsg.value = '连接中断，请重试'
+    analysis.value = {
+      total_score: data.total_score,
+      scores: data.scores,
+      summary: data.summary
     }
-    evtSource.close()
-  })
 
-  evtSource.onerror = () => {
-    if (!report.value && !errorMsg.value) {
-      errorMsg.value = '连接失败，请检查后端是否启动'
-    }
-    evtSource.close()
+    steps.value = [{ step: 'done', message: '分析完成', status: 'done' }]
+  } catch (error) {
+    errorMsg.value = error.message || '连接失败，请检查后端是否启动'
+    steps.value = [{ step: 'error', message: errorMsg.value, status: 'error' }]
   }
-})
-
-onUnmounted(() => {
-  if (evtSource) evtSource.close()
 })
 </script>
 
@@ -179,12 +136,26 @@ h1 { font-size: 28px; margin: 0 0 8px; }
 }
 .score-badge .score { font-size: 32px; font-weight: bold; color: #409eff; }
 .score-badge .label { font-size: 14px; color: #888; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 .card {
   border: 1px solid #eee;
   border-radius: 8px;
   padding: 20px;
   margin-bottom: 16px;
 }
-@media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+.card h3 { margin: 0 0 16px; font-size: 18px; }
+.score-item {
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.score-item:last-child { border-bottom: none; }
+.score-label { font-weight: 500; margin-right: 8px; }
+.score-value { color: #409eff; font-weight: bold; }
+.score-detail { color: #666; font-size: 14px; margin: 4px 0 0; }
+.error-box {
+  background: #fef0f0;
+  color: #f56c6c;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
 </style>
