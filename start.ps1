@@ -27,7 +27,7 @@ for ($i = 1; $i -le 15; $i++) {
 
 # Start backend API server
 Write-Host "[2/5] Starting backend API server..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd D:\test\team--17; & '$PYTHON' -m uvicorn server:app --host 0.0.0.0 --port 8001 --reload"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd D:\test\team--17; & '$PYTHON' -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload"
 
 # Wait for backend to be ready
 Write-Host "Waiting for backend API..." -ForegroundColor Gray
