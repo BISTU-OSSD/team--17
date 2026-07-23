@@ -265,6 +265,145 @@ async def analyze_repo(owner: str, repo: str):
     )
 
 
+@app.get("/api/stream/{owner}/{repo}")
+async def stream_analysis(owner: str, repo: str):
+    """流式分析 GitHub 仓库，实时返回 LLM 思考过程"""
+    import re, json as _json
+
+    if not re.match(r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$", f"{owner}/{repo}"):
+        raise HTTPException(status_code=400, detail="仓库路径格式无效")
+
+    full_name = f"{owner}/{repo}"
+    client = _get_client()
+
+    async def event_generator():
+        try:
+            yield f"data: {_json.dumps({'type': 'start', 'message': '开始分析...'})}\n\n"
+
+            # 获取 GitHub 数据
+            yield f"data: {_json.dumps({'type': 'step', 'message': '正在获取 GitHub 仓库数据...'})}\n\n"
+            try:
+                report = await client.get_full_report(full_name)
+            except RepoNotFoundError as e:
+                yield f"data: {_json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                return
+            except RateLimitExceededError as e:
+                yield f"data: {_json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                return
+            except GitHubAPIError as e:
+                yield f"data: {_json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                return
+
+            report_dict = report.model_dump()
+            yield f"data: {_json.dumps({'type': 'step', 'message': f'已获取 {full_name} 数据'})}\n\n"
+
+            # 转文本
+            yield f"data: {_json.dumps({'type': 'step', 'message': '转换为分析文本...'})}\n\n"
+            text_content = convert_json_to_text(report_dict)
+            yield f"data: {_json.dumps({'type': 'step', 'message': '文本转换完成'})}\n\n"
+
+            # LLM 流式分析（异步实时转发思考过程）
+            yield f"data: {_json.dumps({'type': 'step', 'message': 'AI 正在分析，请稍候...'})}\n\n"
+
+            from config import LLAMA_SERVER_URL, MODEL_PATH
+            from datetime import datetime
+            import httpx as _httpx
+
+            from llama_chat import SYSTEM_PROMPT
+            prompt = SYSTEM_PROMPT + "\ntoday is " + datetime.now().strftime("%Y/%m/%d") + "\n" + text_content
+
+            answer_parts = []
+            async with _httpx.AsyncClient(timeout=120) as llm_client:
+                async with llm_client.stream(
+                    "POST",
+                    LLAMA_SERVER_URL,
+                    json={
+                        "model": MODEL_PATH,
+                        "messages": [
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": "请评估以上GitHub项目"},
+                        ],
+                        "temperature": 0.6,
+                        "max_tokens": 8192,
+                        "stream": True,
+                        "reasoning_effort": "high",
+                    }
+                ) as llm_resp:
+                    llm_resp.raise_for_status()
+                    buffer = ""
+                    async for line in llm_resp.aiter_lines():
+                        if not line:
+                            continue
+                        buffer += line
+                        if not buffer.startswith("data: "):
+                            buffer = ""
+                            continue
+                        data_str = buffer[6:]
+                        buffer = ""
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = _json.loads(data_str)
+                            delta = chunk["choices"][0]["delta"]
+                            if "reasoning_content" in delta and delta["reasoning_content"]:
+                                yield f"data: {_json.dumps({'type': 'thinking', 'content': delta['reasoning_content']})}\n\n"
+                            if "content" in delta and delta["content"]:
+                                answer_parts.append(delta["content"])
+                        except (_json.JSONDecodeError, KeyError, IndexError):
+                            continue
+
+            # 解析最终结果
+            raw_answer = "".join(answer_parts)
+            cleaned = raw_answer
+            if "```json" in cleaned:
+                start = cleaned.find("```json") + 7
+                end = cleaned.find("```", start)
+                if end != -1:
+                    cleaned = cleaned[start:end].strip()
+            elif "```" in cleaned:
+                start = cleaned.find("```") + 3
+                end = cleaned.find("```", start)
+                if end != -1:
+                    cleaned = cleaned[start:end].strip()
+
+            try:
+                result = _json.loads(cleaned)
+            except _json.JSONDecodeError:
+                result = {"summary": raw_answer, "scores": {}}
+
+            # 合并 GitHub 数据
+            result["languages"] = report_dict.get("languages", [])
+            result["contributors"] = report_dict.get("contributors", {})
+            result["commits"] = report_dict.get("commits", {})
+            result["issues"] = report_dict.get("issues", {})
+            result["star_count"] = report_dict.get("star_count", 0)
+            result["fork_count"] = report_dict.get("fork_count", 0)
+            result["description"] = report_dict.get("description", "")
+            result["license"] = report_dict.get("license", "未知")
+            result["repo_url"] = f"https://github.com/{full_name}"
+
+            yield f"data: {_json.dumps({'type': 'done', 'result': result})}\n\n"
+
+        except Exception as e:
+            yield f"data: {_json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/api/stream/health")
+async def stream_health():
+    """流式端点健康检查"""
+    return {"status": "ok", "endpoint": "stream", "version": "1.0.0"}
+
+
 @app.delete("/api/cache")
 async def clear_cache():
     """清空所有缓存"""
