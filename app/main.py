@@ -313,25 +313,27 @@ async def stream_analysis(owner: str, repo: str):
             prompt = SYSTEM_PROMPT + "\ntoday is " + datetime.now().strftime("%Y/%m/%d") + "\n" + text_content
 
             answer_parts = []
-            async with _httpx.AsyncClient(timeout=120) as llm_client:
-                async with llm_client.stream(
-                    "POST",
-                    LLAMA_SERVER_URL,
-                    json={
-                        "model": MODEL_PATH,
-                        "messages": [
-                            {"role": "system", "content": prompt},
-                            {"role": "user", "content": "请评估以上GitHub项目"},
-                        ],
-                        "temperature": 0.6,
-                        "max_tokens": 8192,
-                        "stream": True,
-                        "reasoning_effort": "high",
-                    }
-                ) as llm_resp:
-                    llm_resp.raise_for_status()
-                    buffer = ""
-                    async for line in llm_resp.aiter_lines():
+            llm_ok = False
+            try:
+                async with _httpx.AsyncClient(timeout=120) as llm_client:
+                    async with llm_client.stream(
+                        "POST",
+                        LLAMA_SERVER_URL,
+                        json={
+                            "model": MODEL_PATH,
+                            "messages": [
+                                {"role": "system", "content": prompt},
+                                {"role": "user", "content": "请评估以上GitHub项目"},
+                            ],
+                            "temperature": 0.6,
+                            "max_tokens": 8192,
+                            "stream": True,
+                            "reasoning_effort": "high",
+                        }
+                    ) as llm_resp:
+                        llm_resp.raise_for_status()
+                        buffer = ""
+                        async for line in llm_resp.aiter_lines():
                         if not line:
                             continue
                         buffer += line
@@ -381,14 +383,16 @@ async def stream_analysis(owner: str, repo: str):
             result["total_score"] = round(sum(score_values) / len(score_values), 1) if score_values else 0.0
 
             # 合并 GitHub 数据（平铺到顶层，匹配前端期望的格式）
-            result["languages"] = report_dict.get("languages", [])
+            repo_info = report_dict.get("repo", {})
+            lang_stats = report_dict.get("languages", {})
+            result["languages"] = lang_stats.get("languages", []) if isinstance(lang_stats, dict) else lang_stats
             result["contributors"] = report_dict.get("contributors", {})
             result["commits"] = report_dict.get("commits", {})
             result["issues"] = report_dict.get("issues", {})
-            result["star_count"] = report_dict.get("star_count", 0)
-            result["fork_count"] = report_dict.get("fork_count", 0)
-            result["description"] = report_dict.get("description", "")
-            result["license"] = report_dict.get("license", "未知")
+            result["star_count"] = repo_info.get("stars", 0)
+            result["fork_count"] = repo_info.get("forks", 0)
+            result["description"] = repo_info.get("description", "")
+            result["license"] = repo_info.get("license", "未知")
             result["repo_url"] = f"https://github.com/{full_name}"
 
             print(f"[stream] Final result keys: {list(result.keys())}")
